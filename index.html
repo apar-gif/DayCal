@@ -3721,9 +3721,13 @@ render = function() {
 };
 
 // ── Check for existing session on load ──
+// Show auth overlay immediately, hide it only if a valid session is found
+document.getElementById('auth-overlay').classList.remove('hidden');
 (async () => {
   const { data: { session } } = await _supa.auth.getSession();
-  if (!session) {
+  if (session && session.user) {
+    // onAuthStateChange will handle hiding the overlay and loading data
+  } else {
     document.getElementById('auth-overlay').classList.remove('hidden');
   }
 })();
@@ -3880,7 +3884,7 @@ render = function() {
 
 
 <!-- Auth overlay -->
-<div class="auth-overlay hidden" id="auth-overlay">
+<div class="auth-overlay" id="auth-overlay">
   <div class="auth-box">
     <div class="auth-logo"><i class="ti ti-calendar-time" style="color:var(--accent);font-size:26px;"></i> DayCal</div>
     <div class="auth-sub" id="auth-sub">Sign in to your calendar</div>
