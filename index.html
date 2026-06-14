@@ -934,7 +934,7 @@ function populateGroupSelect(selectedId){
 function renderSidebar(){saveToStorage();
   document.getElementById('cal-list').innerHTML=calendars.map(c=>`
     <div class="cal-item${c.visible?' visible':''}" id="item-${c.id}">
-      <div class="cal-item-row" onclick="toggleVis(${c.id})">
+      <div class="cal-item-row" onclick="toggleVis('${c.id}')">
         <div class="cal-dot" style="background:${c.color}"></div>
         <span class="cal-item-name">${c.name}</span>
         <i class="ti ti-check cal-check"></i>
@@ -946,11 +946,11 @@ function renderSidebar(){saveToStorage();
           <div style="display:flex;align-items:center;gap:9px;"><i class="ti ti-palette"></i>Change color</div>
           <div class="color-picker-row" id="cp-${c.id}"></div>
         </div>
-        <div class="edit-menu-item danger" onclick="askDelete(${c.id})"><i class="ti ti-trash"></i>Delete</div>
+        <div class="edit-menu-item danger" onclick="askDelete('${c.id}')"><i class="ti ti-trash"></i>Delete</div>
       </div>
       <div class="rename-form${renamingId===c.id?' open':''}" id="rename-${c.id}">
-        <input type="text" id="rinput-${c.id}" value="${c.name}" maxlength="30" onkeydown="renameKey(event,${c.id})"/>
-        <div class="rename-btns"><button onclick="cancelRename()">Cancel</button><button class="rename-save" onclick="saveRename(${c.id})">Save</button></div>
+        <input type="text" id="rinput-${c.id}" value="${c.name}" maxlength="30" onkeydown="renameKey(event,'${c.id}')"/>
+        <div class="rename-btns"><button onclick="cancelRename()">Cancel</button><button class="rename-save" onclick="saveRename('${c.id}')">Save</button></div>
       </div>
     </div>`).join('');
   calendars.forEach(c=>{
@@ -959,22 +959,30 @@ function renderSidebar(){saveToStorage();
     const SHOW=15;
     const expanded=r.dataset.expanded==='1';
     const list=expanded?COLORS:COLORS.slice(0,SHOW);
-    let html=list.map(col=>`<div class="cp-swatch${col===c.color?' selected':''}" style="background:${col}" onclick="changeColor(event,${c.id},'${col}')"></div>`).join('');
+    let html=list.map(col=>`<div class="cp-swatch${col===c.color?' selected':''}" style="background:${col}" onclick="changeColor(event,'${c.id}','${col}')"></div>`).join('');
     if(!expanded&&COLORS.length>SHOW) html+=`<button class="cp-more-btn" onclick="event.stopPropagation();this.closest('.color-picker-row').dataset.expanded='1';renderSidebar()" title="More colours">+</button>`;
     r.innerHTML=html;
   });
   if(renamingId!==null){const i=document.getElementById('rinput-'+renamingId);if(i){i.focus();i.select();}}
 }
-function toggleVis(id){if(openMenu===id||renamingId===id)return;const c=calendars.find(x=>x.id==id);if(c)c.visible=!c.visible;renderSidebar();render();}
+function toggleVis(id){if(openMenu===id||renamingId===id)return;const c=calendars.find(x=>x.id==id);if(c){c.visible=!c.visible;dbSaveCalendar(c);}renderSidebar();render();}
 function toggleMenu(e,id){e.stopPropagation();openMenu=openMenu===id?null:id;renamingId=null;renderSidebar();}
-function changeColor(e,id,col){e.stopPropagation();const c=calendars.find(x=>x.id==id);if(c)c.color=col;openMenu=null;renderSidebar();render();}
+function changeColor(e,id,col){e.stopPropagation();const c=calendars.find(x=>x.id==id);if(c){c.color=col;dbSaveCalendar(c);}openMenu=null;renderSidebar();render();}
 function startRename(id){openMenu=null;renamingId=id;renderSidebar();}
 function cancelRename(){renamingId=null;renderSidebar();}
-function saveRename(id){const i=document.getElementById('rinput-'+id);if(!i)return;const v=i.value.trim();if(!v){i.focus();return;}const c=calendars.find(x=>x.id==id);if(c)c.name=v;renamingId=null;renderSidebar();}
+function saveRename(id){const i=document.getElementById('rinput-'+id);if(!i)return;const v=i.value.trim();if(!v){i.focus();return;}const c=calendars.find(x=>x.id==id);if(c){c.name=v;dbSaveCalendar(c);}renamingId=null;renderSidebar();}
 function renameKey(e,id){if(e.key==='Enter')saveRename(id);if(e.key==='Escape')cancelRename();}
 function askDelete(id){openMenu=null;deleteId=id;const c=calendars.find(x=>x.id==id);document.getElementById('delete-msg').textContent=`"${c.name}" will be permanently deleted.`;document.getElementById('delete-overlay').classList.add('open');renderSidebar();}
 function cancelDelete(){deleteId=null;document.getElementById('delete-overlay').classList.remove('open');}
-function confirmDelete(){events=events.filter(e=>e.calId!==deleteId);calendars=calendars.filter(x=>x.id!==deleteId);deleteId=null;document.getElementById('delete-overlay').classList.remove('open');renderSidebar();render();}
+function confirmDelete(){
+  const cal = calendars.find(x=>x.id==deleteId);
+  if (cal) dbDeleteCalendar(cal);
+  events=events.filter(e=>e.calId!=deleteId);
+  calendars=calendars.filter(x=>x.id!=deleteId);
+  deleteId=null;
+  document.getElementById('delete-overlay').classList.remove('open');
+  renderSidebar();render();
+}
 document.addEventListener('click',e=>{if(openMenu&&!e.target.closest('.cal-item')){openMenu=null;renderSidebar();}if(!e.target.closest('.view-picker-wrap'))document.getElementById('view-dropdown').classList.remove('open');});
 function renderNcfSwatches(expanded){
   const SHOW = 15;
@@ -993,10 +1001,9 @@ function cancelNewCal(){document.getElementById('new-cal-form').classList.remove
 function confirmNewCal(){
   const n=document.getElementById('new-cal-name').value.trim();
   if(!n){document.getElementById('new-cal-name').focus();return;}
-  // Ensure nextId is above all existing IDs before assigning
-  const maxId = Math.max(...calendars.map(c=>parseInt(c.id)||0), nextId-1);
-  nextId = maxId + 1;
-  calendars.push({id:nextId++,name:n,color:selColor,visible:true});
+  const newCal = {id: Date.now(), name:n, color:selColor, visible:true};
+  calendars.push(newCal);
+  dbSaveCalendar(newCal); // assigns _dbId and UUID id from Supabase
   renderSidebar();
   document.getElementById('new-cal-form').classList.remove('open');
 }
