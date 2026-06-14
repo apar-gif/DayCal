@@ -3462,7 +3462,7 @@ function toggleAuthMode() {
   document.getElementById('auth-submit-btn').textContent = isSignup ? 'Sign Up' : 'Sign In';
   document.getElementById('auth-switch-text').innerHTML = isSignup
     ? 'Already have an account? <span onclick="toggleAuthMode()">Sign in</span>'
-    : "Don't have an account? <span onclick="toggleAuthMode()">Sign up</span>";
+    : "Don't have an account? <span onclick=\"toggleAuthMode()\">Sign up</span>";
   document.getElementById('auth-confirm-wrap').style.display = isSignup ? 'block' : 'none';
   document.getElementById('auth-err').textContent = '';
 }
