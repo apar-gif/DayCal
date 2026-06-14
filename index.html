@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Calendar</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{--bg:#fff;--bg2:#f5f5f5;--bg3:#ebebeb;--border:#e0e0e0;--border2:#d0d0d0;--text:#1a1a1a;--text2:#555;--text3:#999;--accent:#4A90D9;--accent-bg:#e8f2fc;--accent-text:#1a5fa8;--danger:#E05C5C;--danger-bg:#fdecea;--sh:0 4px 16px rgba(0,0,0,.08);}
   .dark{--bg:#1e1e1e;--bg2:#272727;--bg3:#313131;--border:#383838;--border2:#484848;--text:#f0f0f0;--text2:#aaa;--text3:#666;--accent:#5a9ee8;--accent-bg:#1a3352;--accent-text:#7ab8f5;--danger:#f07070;--danger-bg:#3a1a1a;--sh:0 4px 16px rgba(0,0,0,.4);}
@@ -119,17 +120,38 @@
   .dv-day{font-size:14px;color:var(--text2);}
   /* Time grid */
   .day-grid-wrap{overflow-y:auto;max-height:640px;position:relative;}
+  /* Week time-grid */
+  .week-view{border:.5px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;}
+  .week-header-row{display:flex;border-bottom:.5px solid var(--border2);flex-shrink:0;}
+  .week-time-gutter{width:56px;flex-shrink:0;}
+  .week-col-header{flex:1;padding:8px 4px;text-align:center;border-left:.5px solid var(--border);}
+  .week-col-header .wday{font-size:11px;color:var(--text2);}
+  .week-col-header .wdate{font-size:18px;font-weight:500;color:var(--text);line-height:1.3;cursor:pointer;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;margin:2px auto 0;transition:background .15s;}
+  .week-col-header .wdate:hover{background:var(--bg3);}
+  .week-col-header.today-col-h .wdate{background:var(--accent-bg);color:var(--accent-text);}
+  .week-col-header.today-col-h .wdate:hover{background:var(--accent);color:#fff;}
+  .week-cols-wrap{display:flex;flex:1;}
+  .week-day-col{flex:1;position:relative;border-left:.5px solid var(--border);}
+  .week-day-col:first-child{border-left:none;}
+  .day-hour-label-col{position:absolute;left:-56px;top:0;width:56px;height:100%;}
+  .week-hour-label{position:absolute;left:0;right:10px;text-align:right;font-size:11px;color:var(--text3);transform:translateY(-7px);}
+  .week-cols-wrap{position:relative;margin-left:56px;}
+  .week-day-col .day-hour-label{display:none;}
+
+
   .day-grid{position:relative;margin-left:56px;margin-right:12px;}
   .day-hour-row{display:flex;align-items:flex-start;height:56px;position:relative;z-index:1;}
   .day-hour-label{position:absolute;left:-52px;width:46px;text-align:right;font-size:11px;color:var(--text3);top:-7px;}
   .day-hour-line{position:absolute;left:0;right:0;top:0;border-top:.5px solid var(--border);}
   .day-hour-hit{position:absolute;left:0;right:0;top:0;height:56px;cursor:crosshair;z-index:1;}
-  .day-hour-hit:hover .day-hour-ghost{display:block;}
-  .day-hour-ghost{display:none;position:absolute;left:2px;right:2px;height:56px;top:0;background:var(--accent-bg);border:.5px dashed var(--accent);border-radius:5px;opacity:.6;pointer-events:none;}
   /* Positioned event blocks */
   .day-ev-block{position:absolute;left:2px;right:2px;border-radius:5px;padding:3px 7px;font-size:11px;overflow:hidden;cursor:grab;border-left:3px solid transparent;box-sizing:border-box;z-index:2;user-select:none;}
   .day-ev-block:active{cursor:grabbing;}
   .day-ev-block.dragging{opacity:.9;cursor:grabbing;z-index:30;}
+  .day-ev-block.ev-selected{outline:2px solid currentColor;outline-offset:1px;z-index:6;}
+  .day-ev-resize{position:absolute;left:0;right:0;bottom:0;height:6px;cursor:ns-resize;z-index:5;}
+  .day-ev-block:hover .day-ev-resize{background:linear-gradient(to bottom,transparent,currentColor 80%);opacity:.25;}
+  .day-ev-block.dragging .day-ev-resize{opacity:0;}
   .day-drag-time{position:absolute;right:7px;top:3px;font-size:10px;font-weight:600;pointer-events:none;z-index:31;}
   .day-ev-title{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .day-ev-time{opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -312,7 +334,8 @@
   /* New event popover */
   .new-ev-popover{position:fixed;z-index:600;background:var(--bg);border:.5px solid var(--border2);border-radius:10px;padding:14px 15px;box-shadow:var(--sh);width:300px;display:none;}
   .new-ev-popover.open{display:block;}
-  .new-ev-popover h4{font-size:13px;font-weight:500;color:var(--text);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
+  .new-ev-popover h4{font-size:13px;font-weight:500;color:var(--text);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;cursor:grab;user-select:none;}
+  .new-ev-popover h4.dragging{cursor:grabbing;}
   .new-ev-popover h4 button{font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;padding:2px 4px;border-radius:4px;}
   .new-ev-popover h4 button:hover{background:var(--bg2);color:var(--text);}
   .nep-row{display:flex;flex-direction:column;gap:3px;margin-bottom:9px;}
@@ -420,6 +443,27 @@
   .timer-addtime-custom input{font-size:12px;padding:5px 8px;border:.5px solid var(--border2);border-radius:7px;background:var(--bg2);color:var(--text);width:60px;text-align:center;outline:none;font-family:inherit;}
   .timer-addtime-custom input:focus{border-color:var(--accent);}
   .timer-addtime-custom button{font-size:12px;padding:5px 12px;border-radius:7px;border:.5px solid var(--accent);background:var(--accent-bg);color:var(--accent-text);cursor:pointer;}
+
+  /* ── Auth Screen ── */
+  .auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;}
+  .auth-overlay.hidden{display:none;}
+  .auth-box{background:var(--bg);border:.5px solid var(--border2);border-radius:14px;padding:36px 32px;width:340px;box-shadow:var(--sh);}
+  .auth-logo{font-size:22px;font-weight:600;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+  .auth-sub{font-size:13px;color:var(--text2);margin-bottom:24px;}
+  .auth-label{font-size:12px;font-weight:500;color:var(--text2);margin-bottom:4px;display:block;}
+  .auth-input{width:100%;font-size:13px;padding:8px 10px;border:.5px solid var(--border2);border-radius:7px;background:var(--bg2);color:var(--text);outline:none;font-family:inherit;margin-bottom:12px;}
+  .auth-input:focus{border-color:var(--accent);}
+  .auth-btn{width:100%;padding:9px;font-size:13px;font-weight:500;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;margin-bottom:8px;transition:filter .15s;}
+  .auth-btn:hover{filter:brightness(.92);}
+  .auth-btn.secondary{background:var(--bg2);color:var(--text);border:.5px solid var(--border2);}
+  .auth-btn.secondary:hover{background:var(--bg3);}
+  .auth-err{font-size:12px;color:var(--danger);margin-bottom:10px;min-height:16px;}
+  .auth-switch{font-size:12px;color:var(--text3);text-align:center;margin-top:4px;}
+  .auth-switch span{color:var(--accent);cursor:pointer;text-decoration:underline;}
+  .auth-divider{text-align:center;font-size:11px;color:var(--text3);margin:8px 0;}
+  .auth-user-bar{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:12px;color:var(--text2);border-top:.5px solid var(--border);margin-top:auto;}
+  .auth-signout{font-size:11px;padding:3px 8px;border:.5px solid var(--border2);border-radius:5px;background:none;color:var(--text3);cursor:pointer;}
+  .auth-signout:hover{background:var(--bg2);color:var(--danger);}
 </style>
 </head>
 <body>
@@ -573,10 +617,11 @@
       <div class="cal-header">
         <div class="cal-nav">
           <button class="nav-btn" onclick="navigate(-1)" style="padding:6px 10px;"><i class="ti ti-chevron-left"></i></button>
+          <button class="nav-btn" style="padding:6px 14px;" onclick="goToToday()">Today</button>
+          <button class="nav-btn" onclick="navigate(1)" style="padding:6px 10px;"><i class="ti ti-chevron-right"></i></button>
         </div>
         <span class="cal-title" id="cal-title"></span>
         <div class="cal-nav">
-          <button class="nav-btn" style="padding:6px 14px;" onclick="goToToday()">Today</button>
           <div class="view-picker-wrap">
             <button class="nav-btn btn-view" onclick="toggleDropdown()">
               <i class="ti ti-layout-grid" id="view-icon"></i>
@@ -590,7 +635,6 @@
               <div class="view-option" onclick="setView('day')"><i class="ti ti-square"></i>Day</div>
             </div>
           </div>
-          <button class="nav-btn" onclick="navigate(1)" style="padding:6px 10px;"><i class="ti ti-chevron-right"></i></button>
           <button class="nav-btn" id="sched-toggle-btn" onclick="toggleSchedPanel()" style="padding:6px 10px;" title="Schedule tasks"><i class="ti ti-calendar-time"></i></button>
           <button class="nav-btn" onclick="openSettings()" style="padding:6px 10px;" title="Settings"><i class="ti ti-settings"></i></button>
         </div>
@@ -1364,32 +1408,64 @@ function renderWeek(){
   const d=new Date(viewDate);d.setDate(d.getDate()-d.getDay());const s=new Date(d),e=new Date(d);e.setDate(e.getDate()+6);
   const fmt=o=>MONTHS[o.getMonth()].slice(0,3)+' '+o.getDate();
   document.getElementById('cal-title').textContent=fmt(s)+' – '+fmt(e)+', '+e.getFullYear();
-  let h='<div class="week-grid">';
-  for(let i=0;i<7;i++){const day=new Date(s);day.setDate(s.getDate()+i);const t=isToday(day.getFullYear(),day.getMonth(),day.getDate())?' today-col':'';const ds=dateStr(day.getFullYear(),day.getMonth(),day.getDate());const evs=eventsForDate(ds);let ep=evs.map(ev=>`<div class="event-pill${ev._scheduled?' sched-event':''}" style="background:${calColor(ev.calId)}22;color:${calColor(ev.calId)};border-left:2px solid ${calColor(ev.calId)}">${ev.startTime?ev.startTime+' ':''}${ev.title}${ev.meet?` <i class="ti ti-video" style="font-size:10px;opacity:.7;"></i>`:''}</div>`).join('');h+=`<div class="week-cell"><div class="week-cell-header${t}"><div class="wday">${DAYS[i]}</div><div class="wdate" onclick="goToDay(event,${day.getFullYear()},${day.getMonth()},${day.getDate()})" title="Go to day view">${day.getDate()}</div></div><div class="week-body" data-ds="${ds}" onclick="openNewEvOnDate(event,'${ds}')">${ep}</div></div>`;}
-  h+='</div>';document.getElementById('cal-body').innerHTML=h;
-}
-function renderDay(){
-  const d=viewDate;
-  document.getElementById('cal-title').textContent=DAYS[d.getDay()]+', '+MONTHS[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
-  const isT=isToday(d.getFullYear(),d.getMonth(),d.getDate());
-  const ds=dateStr(d.getFullYear(),d.getMonth(),d.getDate());
-  const dayEvs=eventsForDate(ds);
-  const PX_PER_MIN=56/60; // 56px per hour row
 
-  // Build hour grid rows (hit targets only — no events inside)
+  let headerCols='';
+  let bodyCols='';
+  for(let i=0;i<7;i++){
+    const day=new Date(s);day.setDate(s.getDate()+i);
+    const isT=isToday(day.getFullYear(),day.getMonth(),day.getDate());
+    const ds=dateStr(day.getFullYear(),day.getMonth(),day.getDate());
+
+    headerCols+=`<div class="week-col-header${isT?' today-col-h':''}">
+      <div class="wday">${DAYS[i]}</div>
+      <div class="wdate" onclick="goToDay(event,${day.getFullYear()},${day.getMonth()},${day.getDate()})" title="Go to day view">${day.getDate()}</div>
+    </div>`;
+
+    const colHtml = buildDayColumn(ds, isT, {compact:true});
+    bodyCols+=`<div class="week-day-col" data-ds="${ds}">${colHtml}</div>`;
+  }
+
+  const h=`<div class="week-view">
+    <div class="week-header-row">
+      <div class="week-time-gutter"></div>
+      ${headerCols}
+    </div>
+    <div class="day-grid-wrap">
+      <div class="week-cols-wrap" style="height:${24*56}px;">
+        <div class="day-hour-label-col">
+          ${Array.from({length:24},(_,i)=>{
+            const lbl=i===0?'12 AM':i<12?i+' AM':i===12?'12 PM':(i-12)+' PM';
+            return `<div class="week-hour-label" style="top:${i*56}px;">${lbl}</div>`;
+          }).join('')}
+        </div>
+        ${bodyCols}
+        <div class="day-drag-time" id="day-drag-time"></div>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('cal-body').innerHTML=h;
+}
+// Build the rows/event-blocks/now-line for a single day column.
+// Used by both Day view (1 column) and Week view (7 columns).
+function buildDayColumn(ds, isT, opts){
+  opts = opts || {};
+  const compact = !!opts.compact; // week view: smaller meta, hide hour labels
+  const PX_PER_MIN_LOCAL = 56/60;
+  const dayEvs = eventsForDate(ds);
+
+  // Hour grid rows (hit targets only)
   let rows='';
   for(let i=0;i<24;i++){
     const lbl=i===0?'12 AM':i<12?i+' AM':i===12?'12 PM':(i-12)+' PM';
     rows+=`<div class="day-hour-row">
-      <div class="day-hour-label">${lbl}</div>
+      ${compact?'':`<div class="day-hour-label">${lbl}</div>`}
       <div class="day-hour-line"></div>
       <div class="day-hour-hit" data-hour="${i}" onclick="quickAddEvOnHour(event,'${ds}',${i})">
-        <div class="day-hour-ghost"></div>
       </div>
     </div>`;
   }
 
-  // Build positioned event blocks
+  // Positioned event blocks
   let evBlocks='', evIdx=0;
   dayEvs.forEach(ev=>{
     if(!ev.startTime||!ev.endTime)return;
@@ -1397,25 +1473,27 @@ function renderDay(){
     const [eh,em]=ev.endTime.split(':').map(Number);
     const startMin=sh*60+sm, endMin=eh*60+em;
     const dur=Math.max(endMin-startMin,15);
-    const top=startMin*PX_PER_MIN;
-    const height=dur*PX_PER_MIN;
+    const top=startMin*PX_PER_MIN_LOCAL;
+    const height=dur*PX_PER_MIN_LOCAL;
     const col=calColor(ev.calId);
     const timeLabel=`${ev.startTime}–${ev.endTime}`;
-    const metaHtml = height > 42 ? (()=>{
+    const metaThreshold = compact ? 50 : 42;
+    const metaHtml = height > metaThreshold ? (()=>{
       let m = '';
       if(ev.location) m += `<span><i class="ti ti-map-pin" style="font-size:9px;"></i>${esc(ev.location)}</span>`;
       if(ev.meet) m += `<a href="${ev.meet}" target="_blank" onclick="event.stopPropagation()"><i class="ti ti-video" style="font-size:9px;"></i>Join Meet</a>`;
       return m ? `<div class="day-ev-meta">${m}</div>` : '';
     })() : '';
     evBlocks+=`<div class="day-ev-block${ev._scheduled?' sched-ev-block':''}"
-      data-ev-idx="${evIdx}"
+      data-ev-idx="${evIdx}" data-ds="${ds}"
       style="top:${top}px;height:${height}px;background:${col}22;border-left-color:${col};color:${col};"
       onmousedown="startEvDrag(event,'${ds}',${evIdx})"
       ondblclick="openEditEvPopover(event,'${ds}',${evIdx})">
-      <div class="day-ev-title">${esc(ev.title)}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
+      <div class="day-ev-title">${ev.title?esc(ev.title):'<span style="opacity:.5;font-style:italic;">(No title)</span>'}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
       ${height>28?`<div class="day-ev-time">${timeLabel}</div>`:''}
       ${metaHtml}
       ${ev._scheduled?`<button class="sched-cancel-btn" onclick="cancelScheduledBlock(event,'${ds}',${evIdx})" title="Cancel scheduled block">✕</button>`:''}
+      <div class="day-ev-resize" onmousedown="startEvResize(event,'${ds}',${evIdx})"></div>
     </div>`;
     evIdx++;
   });
@@ -1424,8 +1502,19 @@ function renderDay(){
   let nowLine='';
   if(isT){
     const nowMin=now.getHours()*60+now.getMinutes();
-    nowLine=`<div class="day-now-line" style="top:${nowMin*PX_PER_MIN}px"><div class="day-now-dot"></div></div>`;
+    nowLine=`<div class="day-now-line" style="top:${nowMin*PX_PER_MIN_LOCAL}px"><div class="day-now-dot"></div></div>`;
   }
+
+  return rows+evBlocks+nowLine;
+}
+
+function renderDay(){
+  const d=viewDate;
+  document.getElementById('cal-title').textContent=DAYS[d.getDay()]+', '+MONTHS[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
+  const isT=isToday(d.getFullYear(),d.getMonth(),d.getDate());
+  const ds=dateStr(d.getFullYear(),d.getMonth(),d.getDate());
+
+  const colHtml = buildDayColumn(ds, isT, {compact:false});
 
   const h=`<div class="day-view">
     <div class="day-view-header">
@@ -1434,9 +1523,7 @@ function renderDay(){
     </div>
     <div class="day-grid-wrap">
       <div class="day-grid" style="height:${24*56}px;">
-        ${rows}
-        ${evBlocks}
-        ${nowLine}
+        ${colHtml}
         <div class="day-drag-time" id="day-drag-time"></div>
       </div>
     </div>
@@ -2224,6 +2311,7 @@ const _observer = new MutationObserver(() => {
 _observer.observe(document.getElementById('cal-body'), { childList: true, subtree: true });
 
 function goToDay(e, y, m, d) {
+  if (_justDragged) return; // ignore click-through right after a drag/resize ends
   e.stopPropagation(); // don't bubble to cell click (new event)
   viewDate = new Date(y, m, d);
   viewYear = y; viewMonth = m;
@@ -2303,6 +2391,7 @@ function quickAddEvOnHour(e, ds, hour) {
 function openNewEvOnHour(e, ds, hour) { quickAddEvOnHour(e, ds, hour); }
 
 function openNewEvOnDate(e, ds) {
+  if (_justDragged) return; // ignore click-through right after a drag/resize ends
   if (e.target.closest('.event-pill')) return;
   e.stopPropagation();
   _openPopover(e.currentTarget, ds, '09:00', '10:00');
@@ -2311,11 +2400,33 @@ function openNewEvOnDate(e, ds) {
 function _openPopover(anchorEl, ds, startTime, endTime) {
   _nepDate = ds;
   _nepCalId = null; // reset so each fresh open starts on first calendar
+
+  // ── Immediately create a placeholder (untitled) event so a block appears on the calendar right away ──
+  const calId = (calendars.find(c => c.visible) || calendars[0])?.id || 1;
+  const placeholder = { calId, title: '', date: ds, startTime, endTime, allDay: false, _pendingNew: true };
+  events.push(placeholder);
+  _editingEvRef = placeholder;
+
+  // Preserve scroll position while re-rendering to show the new block
+  const _wrap = document.querySelector('.day-grid-wrap');
+  const _scroll = _wrap ? _wrap.scrollTop : 0;
+  render();
+  const _wrapAfter = document.querySelector('.day-grid-wrap');
+  if (_wrapAfter) _wrapAfter.scrollTop = _scroll;
+
+  // Re-locate the anchor element after re-render (it's now the new block itself)
+  const dayEvs = eventsForDate(ds);
+  const evIdx = dayEvs.indexOf(placeholder);
+  const newAnchor = evIdx >= 0
+    ? document.querySelector(`.day-ev-block[data-ev-idx="${evIdx}"][data-ds="${ds}"]`)
+    : anchorEl;
+
   const pop = document.getElementById('new-ev-popover');
   const d = new Date(ds + 'T00:00:00');
   document.getElementById('nep-heading').textContent =
     DAYS[d.getDay()] + ', ' + MONTHS[d.getMonth()].slice(0,3) + ' ' + d.getDate();
   document.getElementById('nep-title').value = '';
+  document.getElementById('nep-title').placeholder = '(No title)';
   document.getElementById('nep-start').value = startTime;
   document.getElementById('nep-end').value = endTime;
   document.getElementById('nep-location').value = '';
@@ -2328,14 +2439,25 @@ function _openPopover(anchorEl, ds, startTime, endTime) {
   document.getElementById('nep-end-date').style.display = 'none';
   document.getElementById('nep-end-after-wrap').style.display = 'none';
   document.getElementById('nep-end-after').value = 10;
+  document.getElementById('nep-save-btn').textContent = 'Done';
+  document.getElementById('nep-delete-btn').style.display = 'none';
   _initDowButtons();
-  _renderNepCals(null); // null = default to first calendar
+  _renderNepCals(calId);
   pop.classList.add('open');
-  _positionPopover(anchorEl);
+  _positionPopover(newAnchor || anchorEl);
   setTimeout(() => document.getElementById('nep-title').focus(), 50);
 }
 
 function closeNewEvPopover() {
+  // If the user closes/cancels without naming a newly-created event, remove it
+  if (_editingEvRef && _editingEvRef._pendingNew) {
+    const idx = events.indexOf(_editingEvRef);
+    if (idx >= 0) events.splice(idx, 1);
+    _editingEvRef = null;
+    document.getElementById('new-ev-popover').classList.remove('open');
+    render();
+    return;
+  }
   document.getElementById('new-ev-popover').classList.remove('open');
 }
 
@@ -2361,8 +2483,8 @@ document.addEventListener('click', e => {
   }
 });
 function saveNewEvPopover() {
+  // Title is optional — empty titles are allowed ("(No title)" placeholder shown, stored as '')
   const title = document.getElementById('nep-title').value.trim();
-  if (!title) { document.getElementById('nep-title').focus(); return; }
 
   const startTime = document.getElementById('nep-start').value;
   const endTime   = document.getElementById('nep-end').value;
@@ -2375,31 +2497,33 @@ function saveNewEvPopover() {
     : (calendars[0] && calendars[0].id) || 1;
 
   if (_editingEvRef) {
-    // ── Edit existing event ──
+    const wasPendingNew = !!_editingEvRef._pendingNew;
+
     _editingEvRef.title     = title;
     _editingEvRef.startTime = startTime;
     _editingEvRef.endTime   = endTime;
     _editingEvRef.location  = location || undefined;
     _editingEvRef.meet      = meet || undefined;
     _editingEvRef.calId     = calId;
-    _editingEvRef = null;
-  } else {
-    // ── Create new event (with recurrence) ──
-    const rule             = _buildRecurRule(_nepDate);
-    const recurId          = rule ? ('recur_' + Date.now()) : undefined;
-    const recurrenceLabel  = _recurrenceLabel(document.getElementById('nep-recur').value);
-    const base = {
-      calId, title, date: _nepDate, startTime, endTime, allDay: false,
-      ...(location ? { location } : {}),
-      ...(meet ? { meet } : {}),
-      ...(recurId ? { recurId, recurrenceLabel } : {}),
-    };
-    events.push(base);
-    if (rule) {
-      expandRecurrence(_nepDate, rule).forEach(date => {
-        events.push({ ...base, date, _recurInstance: true });
-      });
+    delete _editingEvRef._pendingNew;
+
+    // Apply recurrence (only relevant for newly-created events, not edits of existing ones)
+    if (wasPendingNew) {
+      const rule = _buildRecurRule(_nepDate);
+      if (rule) {
+        const recurId = 'recur_' + Date.now();
+        const recurrenceLabel = _recurrenceLabel(document.getElementById('nep-recur').value);
+        _editingEvRef.recurId = recurId;
+        _editingEvRef.recurrenceLabel = recurrenceLabel;
+        const base = { ..._editingEvRef };
+        delete base._pendingNew;
+        expandRecurrence(_nepDate, rule).forEach(date => {
+          events.push({ ...base, date, _recurInstance: true });
+        });
+      }
     }
+
+    _editingEvRef = null;
   }
 
   closeNewEvPopover();
@@ -2422,7 +2546,17 @@ function saveNewEvPopover() {
 const PX_PER_MIN = 56 / 60;
 const SNAP = 15; // minutes
 
+
+// Find the time-grid column element for a given date string.
+// Works in both Day view (.day-grid) and Week view (.week-day-col[data-ds]).
+function _gridForDs(ds) {
+  const weekCol = document.querySelector(`.week-day-col[data-ds="${ds}"]`);
+  if (weekCol) return weekCol;
+  return document.querySelector('.day-grid');
+}
+
 let _drag = null;
+let _justDragged = false; // suppress click-through (e.g. goToDay) right after a drag ends
 
 function _snapMin(m) { return Math.round(m / SNAP) * SNAP; }
 
@@ -2453,6 +2587,7 @@ function startEvDrag(e, ds, evIdx) {
   function cancelTry() {
     document.removeEventListener('mousemove', tryStart);
     document.removeEventListener('mouseup', cancelTry);
+    if (!dragStarted) selectEventBlock(ds, evIdx);
   }
   document.addEventListener('mousemove', tryStart);
   document.addEventListener('mouseup', cancelTry);
@@ -2471,11 +2606,11 @@ function _beginDrag(e, ds, evIdx) {
   const endMin   = eh * 60 + em;
   const durMins  = Math.max(endMin - startMin, 15);
 
-  const grid = document.querySelector('.day-grid');
+  const grid = _gridForDs(ds);
   const wrap = document.querySelector('.day-grid-wrap');
   if (!grid || !wrap) return;
 
-  const blockEl = document.querySelector(`.day-ev-block[data-ev-idx="${evIdx}"]`);
+  const blockEl = document.querySelector(`.day-ev-block[data-ev-idx="${evIdx}"][data-ds="${ds}"]`);
   if (!blockEl) return;
   const blockRect = blockEl.getBoundingClientRect();
   const gridRect  = grid.getBoundingClientRect();
@@ -2507,12 +2642,32 @@ function _beginDrag(e, ds, evIdx) {
 
 document.addEventListener('mousemove', e => {
   if (!_drag) return;
-  const { clickOffsetMins, durMins, timeLabel, blockEl, wrap, grid } = _drag;
+  const { clickOffsetMins, durMins, timeLabel, blockEl, wrap, grid, isResize, startMin } = _drag;
 
   const gridRect = grid.getBoundingClientRect();
   // gridRect.top already moves as the grid scrolls, so this gives the
   // correct pixel position within the grid without adding scrollTop again
   const relY     = e.clientY - gridRect.top;
+
+  if (isResize) {
+    // Resize: top stays fixed, only height (= duration) changes based on cursor Y
+    const rawEnd = relY / PX_PER_MIN;
+    let snappedEnd = _snapMin(rawEnd);
+    snappedEnd = Math.max(startMin + 15, Math.min(snappedEnd, 24 * 60));
+    const newDur = snappedEnd - startMin;
+
+    blockEl.style.height = (newDur * PX_PER_MIN) + 'px';
+    timeLabel.style.top  = (Math.min(snappedEnd, 24*60) * PX_PER_MIN + 3) + 'px';
+    timeLabel.textContent = `Until ${_fmt12short(snappedEnd)} (${newDur >= 60 ? (Math.floor(newDur/60)+'h '+(newDur%60?(newDur%60)+'m':'')) : newDur+'m'})`;
+
+    _drag._snappedDur = newDur;
+
+    // Auto-scroll near edges
+    const wrapRect = wrap.getBoundingClientRect();
+    if (e.clientY > wrapRect.bottom - 40) wrap.scrollTop += 6;
+    if (e.clientY < wrapRect.top    + 40) wrap.scrollTop -= 6;
+    return;
+  }
 
   const rawStart = (relY / PX_PER_MIN) - clickOffsetMins;
   const visualStart = Math.max(0, Math.min(rawStart, 24 * 60 - durMins));
@@ -2536,28 +2691,37 @@ document.addEventListener('mousemove', e => {
 
 document.addEventListener('mouseup', () => {
   if (!_drag) return;
-  const { ds, evIdx, durMins, ghost, timeLabel, blockEl, _snappedStart } = _drag;
+  const { ds, evIdx, durMins, ghost, timeLabel, blockEl, _snappedStart, isResize } = _drag;
 
   timeLabel.textContent = '';
   blockEl.classList.remove('dragging');
   document.body.style.userSelect = '';
   document.body.style.cursor     = '';
 
-  const newStart = _snappedStart;
-  const newEnd   = newStart + durMins;
-
-  // Use the direct reference captured at drag-start
   const { globalEvRef } = _drag;
   if (globalEvRef) {
-    globalEvRef.startTime = _minsToTimeStr(newStart);
-    globalEvRef.endTime   = _minsToTimeStr(newEnd);
+    if (isResize) {
+      // Resize: keep start time, change end time only
+      const newDur = Math.max(_drag._snappedDur, 15);
+      const [sh, sm] = globalEvRef.startTime.split(':').map(Number);
+      const newEnd = sh * 60 + sm + newDur;
+      globalEvRef.endTime = _minsToTimeStr(Math.min(newEnd, 24 * 60));
+    } else {
+      const newStart = _snappedStart;
+      const newEnd   = newStart + durMins;
+      globalEvRef.startTime = _minsToTimeStr(newStart);
+      globalEvRef.endTime   = _minsToTimeStr(newEnd);
+    }
   }
 
   _drag = null;
+  _justDragged = true;
+  setTimeout(() => { _justDragged = false; }, 200);
+
   // Preserve scroll position across re-render
   const _wrap = document.querySelector('.day-grid-wrap');
   const _savedScroll = _wrap ? _wrap.scrollTop : 0;
-  renderDay();
+  render();
   const _wrapAfter = document.querySelector('.day-grid-wrap');
   if (_wrapAfter) _wrapAfter.scrollTop = _savedScroll;
   if (typeof schedPanelOpen !== 'undefined' && schedPanelOpen) {
@@ -2770,7 +2934,7 @@ function _buildRecurRule(startDate) {
   } else if (endType === 'after') {
     rule.count = Math.max(1, parseInt(document.getElementById('nep-end-after').value) || 10);
   } else {
-    rule.count = 52; // never = 1 year worth as safety cap
+    rule.count = 730; // never = ~2 years worth (covers daily recurrence well beyond a month)
   }
 
   return rule;
@@ -2782,10 +2946,10 @@ function expandRecurrence(startDateStr, rule) {
   const dates = [];
   const [sy, sm, sd] = startDateStr.split('-').map(Number);
   let cur = new Date(sy, sm - 1, sd);
-  const maxOccurrences = rule.count || 500;
+  const maxOccurrences = rule.count || 730;
   const endDate = rule.endDate ? new Date(rule.endDate + 'T00:00:00') : null;
   let count = 0;
-  const MAX = 500; // hard safety cap
+  const MAX = 730; // hard safety cap (~2 years)
 
   while (count < Math.min(maxOccurrences, MAX)) {
     const ds = cur.getFullYear() + '-' +
@@ -2844,6 +3008,7 @@ let _editingEvRef = null; // direct reference to event object being edited
 function openEditEvPopover(e, ds, evIdx) {
   e.stopPropagation();
   e.preventDefault();
+  clearEventSelection();
 
   const dayEvs = eventsForDate(ds);
   const ev = dayEvs[evIdx];
@@ -2909,14 +3074,15 @@ function deleteEvFromPopover() {
   }
 }
 
-// Patch closeNewEvPopover to reset edit state
+// Patch closeNewEvPopover to reset edit state — call original FIRST so
+// it can still inspect _editingEvRef to remove an empty pending-new event.
 const _origClosePopover = closeNewEvPopover;
 closeNewEvPopover = function() {
+  _origClosePopover();
   _editingEvRef = null;
   document.getElementById('nep-heading').textContent = 'New event';
   document.getElementById('nep-save-btn').textContent = 'Add';
   document.getElementById('nep-delete-btn').style.display = 'none';
-  _origClosePopover();
 };
 
 // Patch saveNewEvPopover to handle edit mode (update existing event)
@@ -3079,11 +3245,494 @@ function timerCompleteAddTimeCustom() {
   timerCompleteAddTime(mins);
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// DRAG THE EVENT POPOVER
+// ══════════════════════════════════════════════════════════════
+
+let _popDrag = null;
+
+function startPopoverDrag(e) {
+  // Don't drag if clicking the close button
+  if (e.target.closest('button')) return;
+  e.preventDefault();
+  const pop = document.getElementById('new-ev-popover');
+  const rect = pop.getBoundingClientRect();
+  _popDrag = {
+    offsetX: e.clientX - rect.left,
+    offsetY: e.clientY - rect.top
+  };
+  document.getElementById('nep-header').classList.add('dragging');
+  document.body.style.userSelect = 'none';
+}
+
+document.addEventListener('mousemove', e => {
+  if (!_popDrag) return;
+  const pop = document.getElementById('new-ev-popover');
+  let left = e.clientX - _popDrag.offsetX;
+  let top  = e.clientY - _popDrag.offsetY;
+  // Clamp to viewport
+  const maxLeft = window.innerWidth - pop.offsetWidth - 4;
+  const maxTop  = window.innerHeight - pop.offsetHeight - 4;
+  left = Math.max(4, Math.min(left, maxLeft));
+  top  = Math.max(4, Math.min(top, maxTop));
+  pop.style.left = left + 'px';
+  pop.style.top  = top + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+  if (!_popDrag) return;
+  _popDrag = null;
+  const header = document.getElementById('nep-header');
+  if (header) header.classList.remove('dragging');
+  document.body.style.userSelect = '';
+});
+
+
+// ══════════════════════════════════════════════════════════════
+// RESIZE EVENT (drag bottom edge to extend/shrink duration)
+// ══════════════════════════════════════════════════════════════
+
+function startEvResize(e, ds, evIdx) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const dayEvs = eventsForDate(ds);
+  const ev = dayEvs[evIdx];
+  if (!ev || !ev.startTime || !ev.endTime) return;
+  const globalEvRef = events.find(x => x === ev);
+  if (!globalEvRef) return;
+
+  const [sh, sm] = ev.startTime.split(':').map(Number);
+  const [eh, em] = ev.endTime.split(':').map(Number);
+  const startMin = sh * 60 + sm;
+  const endMin    = eh * 60 + em;
+  const origDur   = Math.max(endMin - startMin, 15);
+
+  const grid = _gridForDs(ds);
+  const wrap = document.querySelector('.day-grid-wrap');
+  if (!grid || !wrap) return;
+
+  const blockEl = document.querySelector(`.day-ev-block[data-ev-idx="${evIdx}"][data-ds="${ds}"]`);
+  if (!blockEl) return;
+
+  const timeLabel = document.getElementById('day-drag-time');
+  const col = calColor(ev.calId);
+  timeLabel.style.color = col;
+
+  blockEl.classList.add('dragging');
+
+  _drag = {
+    ds, evIdx, ev, durMins: origDur, col,
+    timeLabel, blockEl, wrap, grid,
+    globalEvRef,
+    isResize: true,
+    startMin, // fixed top, doesn't move
+    _snappedDur: origDur,
+  };
+
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'ns-resize';
+}
+
+
+function _renderPreservingScroll() {
+  const wrap = document.querySelector('.day-grid-wrap');
+  const scroll = wrap ? wrap.scrollTop : 0;
+  render();
+  const wrapAfter = document.querySelector('.day-grid-wrap');
+  if (wrapAfter) wrapAfter.scrollTop = scroll;
+}
+// ══════════════════════════════════════════════════════════════
+// SELECT EVENT + DELETE VIA KEYBOARD
+// ══════════════════════════════════════════════════════════════
+
+let _selectedEvRef = null; // direct reference to the currently-selected event
+
+function selectEventBlock(ds, evIdx) {
+  const dayEvs = eventsForDate(ds);
+  const ev = dayEvs[evIdx];
+  if (!ev) { clearEventSelection(); return; }
+  const ref = events.find(x => x === ev);
+  if (!ref) { clearEventSelection(); return; }
+
+  // Toggle off if clicking the same event again
+  if (_selectedEvRef === ref) { clearEventSelection(); return; }
+
+  _selectedEvRef = ref;
+  document.querySelectorAll('.day-ev-block.ev-selected').forEach(el => el.classList.remove('ev-selected'));
+  const blockEl = document.querySelector(`.day-ev-block[data-ev-idx="${evIdx}"][data-ds="${ds}"]`);
+  if (blockEl) blockEl.classList.add('ev-selected');
+}
+
+function clearEventSelection() {
+  _selectedEvRef = null;
+  document.querySelectorAll('.day-ev-block.ev-selected').forEach(el => el.classList.remove('ev-selected'));
+}
+
+// Clicking anywhere else (background, other UI) clears selection
+document.addEventListener('mousedown', e => {
+  if (!_selectedEvRef) return;
+  if (e.target.closest('.day-ev-block')) return; // handled by selectEventBlock itself
+  clearEventSelection();
+});
+
+// Delete / Backspace removes the selected event
+document.addEventListener('keydown', e => {
+  if (!_selectedEvRef) return;
+  // Don't hijack delete/backspace while typing in an input/textarea/select
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+
+  e.preventDefault();
+  const ev = _selectedEvRef;
+
+  if (ev.recurId) {
+    // Recurring event — ask which scope to delete
+    showDeleteRecurrenceModal(ev);
+  } else {
+    const idx = events.indexOf(ev);
+    if (idx >= 0) events.splice(idx, 1);
+    clearEventSelection();
+    _renderPreservingScroll();
+    if (typeof schedPanelOpen !== 'undefined' && schedPanelOpen) {
+      schedSlots = computeWeekSlots(); renderSchedPanel();
+    }
+  }
+});
+
+// ── Recurrence delete-scope modal ──
+function showDeleteRecurrenceModal(ev) {
+  const overlay = document.getElementById('delete-recur-overlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+}
+
+function deleteRecurrenceScope(scope) {
+  const ev = _selectedEvRef;
+  document.getElementById('delete-recur-overlay').classList.remove('open');
+  if (!ev) return;
+
+  if (scope === 'this') {
+    const idx = events.indexOf(ev);
+    if (idx >= 0) events.splice(idx, 1);
+  } else if (scope === 'future') {
+    // Delete this and all instances on/after this event's date with same recurId
+    const cutoff = ev.date;
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].recurId === ev.recurId && events[i].date >= cutoff) {
+        events.splice(i, 1);
+      }
+    }
+  } else if (scope === 'all') {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].recurId === ev.recurId) events.splice(i, 1);
+    }
+  }
+
+  clearEventSelection();
+  _renderPreservingScroll();
+  if (typeof schedPanelOpen !== 'undefined' && schedPanelOpen) {
+    schedSlots = computeWeekSlots(); renderSchedPanel();
+  }
+}
+
+function cancelDeleteRecurrence() {
+  document.getElementById('delete-recur-overlay').classList.remove('open');
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// SUPABASE — AUTH + DATA SYNC
+// ══════════════════════════════════════════════════════════════
+
+const SUPA_URL = 'https://jorgeoazofhkvqrgdbum.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impvcmdlb2F6b2Zoa3ZxcmdkYnVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTgyNDcsImV4cCI6MjA5Njk3NDI0N30.bkDQWIryo9-2W4_eE9_vFp0D3XFbTa94ZFpazkEyKyk';
+const _supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+let _supaUser = null;
+let _authMode = 'signin'; // 'signin' | 'signup'
+
+// ── Auth UI helpers ──
+function toggleAuthMode() {
+  _authMode = _authMode === 'signin' ? 'signup' : 'signin';
+  const isSignup = _authMode === 'signup';
+  document.getElementById('auth-sub').textContent = isSignup ? 'Create your account' : 'Sign in to your calendar';
+  document.getElementById('auth-submit-btn').textContent = isSignup ? 'Sign Up' : 'Sign In';
+  document.getElementById('auth-switch-text').innerHTML = isSignup
+    ? 'Already have an account? <span onclick="toggleAuthMode()">Sign in</span>'
+    : "Don't have an account? <span onclick="toggleAuthMode()">Sign up</span>";
+  document.getElementById('auth-confirm-wrap').style.display = isSignup ? 'block' : 'none';
+  document.getElementById('auth-err').textContent = '';
+}
+
+async function authSubmit() {
+  const email    = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const err      = document.getElementById('auth-err');
+  err.textContent = '';
+
+  if (!email || !password) { err.textContent = 'Please enter email and password.'; return; }
+
+  if (_authMode === 'signup') {
+    const confirm = document.getElementById('auth-confirm').value;
+    if (password !== confirm) { err.textContent = 'Passwords do not match.'; return; }
+    const { error } = await _supa.auth.signUp({ email, password });
+    if (error) { err.textContent = error.message; return; }
+    err.style.color = 'var(--accent)';
+    err.textContent = 'Check your email to confirm your account!';
+    return;
+  }
+
+  const { data, error } = await _supa.auth.signInWithPassword({ email, password });
+  if (error) { err.textContent = error.message; return; }
+  // onAuthStateChange will handle the rest
+}
+
+async function authForgot() {
+  const email = document.getElementById('auth-email').value.trim();
+  const err   = document.getElementById('auth-err');
+  if (!email) { err.textContent = 'Enter your email first.'; return; }
+  const { error } = await _supa.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://apar-gif.github.io/DayCal'
+  });
+  if (error) { err.textContent = error.message; return; }
+  err.style.color = 'var(--accent)';
+  err.textContent = 'Password reset email sent!';
+}
+
+async function authSignOut() {
+  await _supa.auth.signOut();
+  _supaUser = null;
+  calendars = [{id:1,name:'Personal',color:'#4A90D9',visible:true},{id:2,name:'Work',color:'#E05C5C',visible:true}];
+  events = []; tasks = []; groups = [];
+  taskNextId = 1; groupNextId = 1; nextId = 3;
+  render(); renderSidebar(); renderTasks();
+  document.getElementById('auth-overlay').classList.remove('hidden');
+}
+
+// ── Listen for auth state changes ──
+_supa.auth.onAuthStateChange(async (event, session) => {
+  if (session && session.user) {
+    _supaUser = session.user;
+    document.getElementById('auth-overlay').classList.add('hidden');
+    await loadFromSupabase();
+    render(); renderSidebar(); renderTasks();
+    showUserBar();
+  } else {
+    _supaUser = null;
+    document.getElementById('auth-overlay').classList.remove('hidden');
+    hideUserBar();
+  }
+});
+
+// ── User bar in sidebar ──
+function showUserBar() {
+  let bar = document.getElementById('auth-user-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'auth-user-bar';
+    bar.className = 'auth-user-bar';
+    document.querySelector('.sidebar').appendChild(bar);
+  }
+  bar.innerHTML = `<i class="ti ti-user" style="font-size:13px;"></i>
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_supaUser.email}</span>
+    <button class="auth-signout" onclick="authSignOut()">Sign out</button>`;
+}
+function hideUserBar() {
+  const bar = document.getElementById('auth-user-bar');
+  if (bar) bar.remove();
+}
+
+// ── LOAD from Supabase ──
+async function loadFromSupabase() {
+  if (!_supaUser) return;
+  const uid = _supaUser.id;
+
+  const [calsRes, eventsRes, tasksRes, groupsRes] = await Promise.all([
+    _supa.from('calendars').select('*').eq('user_id', uid).order('created_at'),
+    _supa.from('events').select('*').eq('user_id', uid).order('date'),
+    _supa.from('tasks').select('*').eq('user_id', uid).order('created_at'),
+    _supa.from('groups').select('*').eq('user_id', uid).order('created_at'),
+  ]);
+
+  if (calsRes.data && calsRes.data.length) {
+    calendars = calsRes.data.map(c => ({
+      id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id
+    }));
+  } else {
+    // First login — create default calendars
+    await _supa.from('calendars').insert([
+      { user_id: uid, name: 'Personal', color: '#4A90D9', visible: true },
+      { user_id: uid, name: 'Work', color: '#E05C5C', visible: true }
+    ]);
+    const fresh = await _supa.from('calendars').select('*').eq('user_id', uid).order('created_at');
+    calendars = (fresh.data || []).map(c => ({ id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id }));
+  }
+
+  events = (eventsRes.data || []).map(e => ({
+    _dbId: e.id,
+    calId: e.cal_id,
+    title: e.title || '',
+    date: e.date,
+    startTime: e.start_time,
+    endTime: e.end_time,
+    allDay: e.all_day,
+    location: e.location,
+    meet: e.meet,
+    recurId: e.recur_id,
+    recurrenceLabel: e.recurrence_label,
+    _recurInstance: e.recur_instance,
+    _scheduled: e.scheduled,
+  }));
+
+  tasks = (tasksRes.data || []).map(t => ({
+    _dbId: t.id,
+    id: t.id,
+    title: t.title,
+    notes: t.notes || '',
+    due: t.due || '',
+    priority: t.priority || 'none',
+    estMins: t.est_mins || 0,
+    timeLeftMins: t.time_left_mins || 0,
+    groupId: t.group_id || null,
+    done: t.done || false,
+    scheduled: t.scheduled || false,
+  }));
+
+  groups = (groupsRes.data || []).map(g => ({ id: g.id, name: g.name, _dbId: g.id }));
+}
+
+// ── SAVE helpers (called after mutations) ──
+async function dbSaveEvent(ev) {
+  if (!_supaUser) { saveToStorage(); return; }
+  const row = {
+    user_id: _supaUser.id,
+    cal_id: ev.calId,
+    title: ev.title || '',
+    date: ev.date,
+    start_time: ev.startTime || null,
+    end_time: ev.endTime || null,
+    all_day: ev.allDay || false,
+    location: ev.location || null,
+    meet: ev.meet || null,
+    recur_id: ev.recurId || null,
+    recurrence_label: ev.recurrenceLabel || null,
+    recur_instance: ev._recurInstance || false,
+    scheduled: ev._scheduled || false,
+  };
+  if (ev._dbId) {
+    await _supa.from('events').update(row).eq('id', ev._dbId);
+  } else {
+    const { data } = await _supa.from('events').insert(row).select().single();
+    if (data) ev._dbId = data.id;
+  }
+}
+
+async function dbDeleteEvent(ev) {
+  if (!_supaUser || !ev._dbId) return;
+  await _supa.from('events').delete().eq('id', ev._dbId);
+}
+
+async function dbSaveCalendar(cal) {
+  if (!_supaUser) { saveToStorage(); return; }
+  const row = { user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible };
+  if (cal._dbId) {
+    await _supa.from('calendars').update(row).eq('id', cal._dbId);
+  } else {
+    const { data } = await _supa.from('calendars').insert(row).select().single();
+    if (data) { cal._dbId = data.id; cal.id = data.id; }
+  }
+}
+
+async function dbDeleteCalendar(cal) {
+  if (!_supaUser || !cal._dbId) return;
+  await _supa.from('calendars').delete().eq('id', cal._dbId);
+}
+
+async function dbSaveTask(task) {
+  if (!_supaUser) { saveToStorage(); return; }
+  const row = {
+    user_id: _supaUser.id,
+    title: task.title,
+    notes: task.notes || '',
+    due: task.due || '',
+    priority: task.priority || 'none',
+    est_mins: task.estMins || 0,
+    time_left_mins: task.timeLeftMins || 0,
+    group_id: task.groupId || null,
+    done: task.done || false,
+    scheduled: task.scheduled || false,
+  };
+  if (task._dbId) {
+    await _supa.from('tasks').update(row).eq('id', task._dbId);
+  } else {
+    const { data } = await _supa.from('tasks').insert(row).select().single();
+    if (data) { task._dbId = data.id; task.id = data.id; }
+  }
+}
+
+async function dbDeleteTask(task) {
+  if (!_supaUser || !task._dbId) return;
+  await _supa.from('tasks').delete().eq('id', task._dbId);
+}
+
+async function dbSaveGroup(group) {
+  if (!_supaUser) { saveToStorage(); return; }
+  const row = { user_id: _supaUser.id, name: group.name };
+  if (group._dbId) {
+    await _supa.from('groups').update(row).eq('id', group._dbId);
+  } else {
+    const { data } = await _supa.from('groups').insert(row).select().single();
+    if (data) { group._dbId = data.id; group.id = data.id; }
+  }
+}
+
+async function dbDeleteGroup(group) {
+  if (!_supaUser || !group._dbId) return;
+  await _supa.from('groups').delete().eq('id', group._dbId);
+}
+
+// ── Patch saveNewEvPopover to also save to Supabase ──
+const _origSaveNewEvForSupa = saveNewEvPopover;
+saveNewEvPopover = async function() {
+  _origSaveNewEvForSupa();
+  if (!_supaUser) return;
+  // Save all events that don't have a _dbId yet (newly created)
+  for (const ev of events) {
+    if (!ev._dbId && !ev._pendingNew) await dbSaveEvent(ev);
+  }
+};
+
+// ── Patch render to sync in background when logged in ──
+const _origRenderForSupa = render;
+render = function() {
+  _origRenderForSupa();
+  if (_supaUser) {
+    // Sync any unsaved events in background (debounced)
+    clearTimeout(render._syncTimer);
+    render._syncTimer = setTimeout(async () => {
+      for (const ev of events) {
+        if (!ev._dbId && !ev._pendingNew) await dbSaveEvent(ev);
+      }
+    }, 1000);
+  }
+};
+
+// ── Check for existing session on load ──
+(async () => {
+  const { data: { session } } = await _supa.auth.getSession();
+  if (!session) {
+    document.getElementById('auth-overlay').classList.remove('hidden');
+  }
+})();
+
 </script>
 
 <!-- New event popover -->
 <div class="new-ev-popover" id="new-ev-popover">
-  <h4><span id="nep-heading">New event</span><button onclick="closeNewEvPopover()"><i class="ti ti-x"></i></button></h4>
+  <h4 id="nep-header" onmousedown="startPopoverDrag(event)"><span id="nep-heading">New event</span><button onclick="closeNewEvPopover()"><i class="ti ti-x"></i></button></h4>
   <div class="nep-row">
     <div class="nep-label">Title</div>
     <input class="nep-input" id="nep-title" placeholder="Event title" maxlength="80" onkeydown="nepKey(event)"/>
@@ -3209,6 +3858,45 @@ function timerCompleteAddTimeCustom() {
         <button onclick="timerCompleteAddTimeCustom()">+ Add &amp; resume</button>
       </div>
     </div>
+  </div>
+</div>
+
+
+<!-- Delete recurrence scope modal -->
+<div class="settings-overlay" id="delete-recur-overlay" onclick="if(event.target===this)cancelDeleteRecurrence()">
+  <div class="settings-dialog" style="width:300px;">
+    <div class="settings-title">
+      <span><i class="ti ti-trash" style="margin-right:7px;color:var(--danger);"></i>Delete recurring event</span>
+      <button onclick="cancelDeleteRecurrence()"><i class="ti ti-x"></i></button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">This event repeats. What would you like to delete?</div>
+    <div style="display:flex;flex-direction:column;gap:7px;">
+      <button onclick="deleteRecurrenceScope('this')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This event only</button>
+      <button onclick="deleteRecurrenceScope('future')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This and following events</button>
+      <button onclick="deleteRecurrenceScope('all')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--danger);background:none;color:var(--danger);cursor:pointer;font-size:13px;">All events in the series</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Auth overlay -->
+<div class="auth-overlay hidden" id="auth-overlay">
+  <div class="auth-box">
+    <div class="auth-logo"><i class="ti ti-calendar-time" style="color:var(--accent);font-size:26px;"></i> DayCal</div>
+    <div class="auth-sub" id="auth-sub">Sign in to your calendar</div>
+    <div class="auth-err" id="auth-err"></div>
+    <label class="auth-label">Email</label>
+    <input class="auth-input" id="auth-email" type="email" placeholder="you@example.com" onkeydown="if(event.key==='Enter')authSubmit()"/>
+    <label class="auth-label">Password</label>
+    <input class="auth-input" id="auth-password" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')authSubmit()"/>
+    <div id="auth-confirm-wrap" style="display:none;">
+      <label class="auth-label">Confirm Password</label>
+      <input class="auth-input" id="auth-confirm" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')authSubmit()"/>
+    </div>
+    <button class="auth-btn" id="auth-submit-btn" onclick="authSubmit()">Sign In</button>
+    <div class="auth-divider">or</div>
+    <button class="auth-btn secondary" id="auth-forgot-btn" onclick="authForgot()">Forgot password?</button>
+    <div class="auth-switch" id="auth-switch-text">Don't have an account? <span onclick="toggleAuthMode()">Sign up</span></div>
   </div>
 </div>
 
