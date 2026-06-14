@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>"/>
+<link rel="apple-touch-icon" id="apple-touch-icon" href=""/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="DayCal"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Calendar</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
@@ -465,6 +469,56 @@
   .auth-user-bar{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:12px;color:var(--text2);border-top:.5px solid var(--border);margin-top:auto;}
   .auth-signout{font-size:11px;padding:3px 8px;border:.5px solid var(--border2);border-radius:5px;background:none;color:var(--text3);cursor:pointer;}
   .auth-signout:hover{background:var(--bg2);color:var(--danger);}
+
+  /* ══════════════════════════════════════════════════════════
+     MOBILE RESPONSIVE (phones ≤ 768px)
+  ══════════════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+    body{padding:.5rem;}
+
+    /* Stack layout vertically */
+    .app{flex-direction:column;gap:0;}
+
+    /* Hide sidebar — shown via bottom sheet instead */
+    .sidebar{display:none;}
+    .sidebar.mobile-open{display:flex;position:fixed;inset:0;z-index:400;width:100%;height:100%;border-radius:0;margin:0;overflow-y:auto;}
+
+    /* Main takes full width */
+    .main{gap:12px;}
+
+    /* Calendar header — compact */
+    .cal-header{flex-wrap:wrap;gap:6px;margin-bottom:.75rem;}
+    .cal-title{font-size:16px;}
+    #view-label{display:none;}
+
+    /* Hide scheduling panel on mobile */
+    .sched-panel{display:none!important;}
+
+    /* Day/week grid — slightly smaller rows */
+    .day-hour-row{height:48px;}
+    .day-grid-wrap{max-height:calc(100vh - 180px);}
+    .week-cols-wrap{height:${24*48}px!important;}
+
+    /* Tasks section — full width below calendar */
+    .tasks-section{border-radius:10px;}
+
+    /* Timer — smaller on mobile */
+    #timer-block{width:170px!important;}
+
+    /* Bottom nav bar */
+    .mobile-nav{display:flex;}
+  }
+
+  /* Hide mobile nav on desktop */
+  .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:56px;background:var(--bg);border-top:.5px solid var(--border);z-index:350;align-items:stretch;}
+  .mobile-nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;color:var(--text3);background:none;border:none;border-radius:0;cursor:pointer;padding:4px 0;transition:color .15s;}
+  .mobile-nav-btn.active{color:var(--accent);}
+  .mobile-nav-btn i{font-size:20px;}
+
+  /* Add bottom padding on mobile so content isn't behind the nav bar */
+  @media (max-width: 768px) {
+    body{padding-bottom:64px;}
+  }
 </style>
 </head>
 <body>
@@ -590,7 +644,7 @@
   </div>
 </div>
 
-<div class="app">
+<div class="app" id="app" style="display:none;">
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="sidebar-header">
@@ -614,7 +668,7 @@
   <!-- Main -->
   <div class="main">
     <!-- Calendar -->
-    <div>
+    <div class="cal-section">
       <div class="cal-header">
         <div class="cal-nav">
           <button class="nav-btn" onclick="navigate(-1)" style="padding:6px 10px;"><i class="ti ti-chevron-left"></i></button>
@@ -3525,12 +3579,14 @@ _supa.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user) {
     _supaUser = session.user;
     document.getElementById('auth-overlay').classList.add('hidden');
+    document.getElementById('app').style.display = 'flex'; // show the app
     await loadFromSupabase();
     render(); renderSidebar(); renderTasks();
     showUserBar();
   } else {
     _supaUser = null;
     document.getElementById('auth-overlay').classList.remove('hidden');
+    document.getElementById('app').style.display = 'none'; // hide the app
     hideUserBar();
   }
 });
@@ -3759,6 +3815,128 @@ document.getElementById('auth-overlay').classList.remove('hidden');
   }
 })();
 
+
+// Generate apple-touch-icon via canvas (iOS needs a real PNG)
+(function() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 180; canvas.height = 180;
+  const ctx = canvas.getContext('2d');
+  // Background
+  const grad = ctx.createLinearGradient(0, 0, 180, 180);
+  grad.addColorStop(0, '#4A90D9');
+  grad.addColorStop(1, '#2563b0');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 180, 180, 36);
+  ctx.fill();
+  // Calendar body
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.roundRect(28, 52, 124, 104, 10);
+  ctx.fill();
+  // Header strip
+  ctx.fillStyle = '#2563b0';
+  ctx.beginPath();
+  ctx.roundRect(28, 52, 124, 34, [10, 10, 0, 0]);
+  ctx.fill();
+  // Rings
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.roundRect(58, 38, 10, 28, 5); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(112, 38, 10, 28, 5); ctx.fill();
+  // Grid dots
+  ctx.fillStyle = '#4A90D9';
+  const cols = [50, 85, 120, 155], rows2 = [105, 130];
+  cols.forEach(x => rows2.forEach(y => {
+    if (x < 152 && y < 152) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.fill(); }
+  }));
+  // Today highlight
+  ctx.fillStyle = '#4A90D9';
+  ctx.beginPath(); ctx.arc(50, 105, 10, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px -apple-system,sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(new Date().getDate(), 50, 105);
+
+  const link = document.getElementById('apple-touch-icon');
+  if (link) link.href = canvas.toDataURL('image/png');
+})();
+
+
+// ══════════════════════════════════════════════════════════════
+// MOBILE NAV
+// ══════════════════════════════════════════════════════════════
+
+function isMobile() { return window.innerWidth <= 768; }
+
+function mobileNav(tab) {
+  if (!isMobile()) return;
+
+  // Reset all buttons
+  document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mnav-' + tab)?.classList.add('active');
+
+  const calSection = document.querySelector('.cal-section');
+  const tasksSection = document.querySelector('.tasks-section');
+  const sidebar = document.querySelector('.sidebar');
+  const timer = document.getElementById('timer-block');
+
+  // Hide everything first
+  if (calSection) calSection.style.display = 'none';
+  if (tasksSection) tasksSection.style.display = 'none';
+  if (sidebar) sidebar.classList.remove('mobile-open');
+  if (timer) timer.style.display = 'none';
+
+  if (tab === 'cal') {
+    if (calSection) calSection.style.display = '';
+    document.getElementById('mnav-cal').classList.add('active');
+  } else if (tab === 'tasks') {
+    if (tasksSection) tasksSection.style.display = '';
+  } else if (tab === 'sidebar') {
+    if (sidebar) {
+      sidebar.classList.add('mobile-open');
+      // Add close button to sidebar on mobile
+      if (!document.getElementById('mobile-sidebar-close')) {
+        const btn = document.createElement('button');
+        btn.id = 'mobile-sidebar-close';
+        btn.innerHTML = '<i class="ti ti-x"></i> Close';
+        btn.style.cssText = 'margin:8px;padding:8px 14px;font-size:13px;border:.5px solid var(--border2);border-radius:7px;background:var(--bg2);color:var(--text);cursor:pointer;';
+        btn.onclick = () => mobileNav('cal');
+        sidebar.insertBefore(btn, sidebar.firstChild);
+      }
+    }
+  } else if (tab === 'timer') {
+    if (timer) {
+      timer.style.display = 'flex';
+      timer.style.position = 'fixed';
+      timer.style.left = '50%';
+      timer.style.transform = 'translateX(-50%)';
+      timer.style.bottom = '64px';
+      timer.style.width = '90vw';
+      timer.style.maxWidth = '320px';
+    }
+  }
+}
+
+// On resize, reset mobile nav if switching back to desktop
+window.addEventListener('resize', () => {
+  if (!isMobile()) {
+    // Restore all sections on desktop
+    const calSection = document.querySelector('.cal-section');
+    const tasksSection = document.querySelector('.tasks-section');
+    const sidebar = document.querySelector('.sidebar');
+    const timer = document.getElementById('timer-block');
+    if (calSection) calSection.style.display = '';
+    if (tasksSection) tasksSection.style.display = '';
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (timer) { timer.style.display = 'flex'; timer.style.position = 'fixed'; timer.style.left = '16px'; timer.style.transform = ''; timer.style.bottom = '24px'; timer.style.width = '220px'; }
+  }
+});
+
+// Init mobile nav on load
+if (isMobile()) {
+  mobileNav('cal');
+}
+
 </script>
 
 <!-- New event popover -->
@@ -3929,6 +4107,27 @@ document.getElementById('auth-overlay').classList.remove('hidden');
     <button class="auth-btn secondary" id="auth-forgot-btn" onclick="authForgot()">Forgot password?</button>
     <div class="auth-switch" id="auth-switch-text">Don't have an account? <span onclick="toggleAuthMode()">Sign up</span></div>
   </div>
+</div>
+
+
+<!-- Mobile bottom nav -->
+<div class="mobile-nav" id="mobile-nav">
+  <button class="mobile-nav-btn active" id="mnav-cal" onclick="mobileNav('cal')">
+    <i class="ti ti-calendar"></i>
+    <span>Calendar</span>
+  </button>
+  <button class="mobile-nav-btn" id="mnav-tasks" onclick="mobileNav('tasks')">
+    <i class="ti ti-check"></i>
+    <span>Tasks</span>
+  </button>
+  <button class="mobile-nav-btn" id="mnav-sidebar" onclick="mobileNav('sidebar')">
+    <i class="ti ti-layout-sidebar"></i>
+    <span>Calendars</span>
+  </button>
+  <button class="mobile-nav-btn" id="mnav-timer" onclick="mobileNav('timer')">
+    <i class="ti ti-clock"></i>
+    <span>Timer</span>
+  </button>
 </div>
 
 </body>
