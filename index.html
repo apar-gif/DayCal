@@ -3559,10 +3559,19 @@ async function authSubmit() {
   if (_authMode === 'signup') {
     const confirm = document.getElementById('auth-confirm').value;
     if (password !== confirm) { err.textContent = 'Passwords do not match.'; return; }
-    const { error } = await _supa.auth.signUp({ email, password });
-    if (error) { err.textContent = error.message; return; }
-    err.style.color = 'var(--accent)';
-    err.textContent = 'Check your email to confirm your account!';
+    try {
+      const { data, error } = await _supa.auth.signUp({ email, password });
+      if (error) { err.textContent = error.message; return; }
+      // If user already exists but unconfirmed, data.user will exist with identities=[]
+      if (data?.user?.identities?.length === 0) {
+        err.textContent = 'This email is already registered. Check your inbox or try signing in.';
+        return;
+      }
+      err.style.color = 'var(--accent)';
+      err.textContent = 'Check your email to confirm your account!';
+    } catch(e) {
+      err.textContent = 'Sign up failed: ' + (e.message || JSON.stringify(e));
+    }
     return;
   }
 
