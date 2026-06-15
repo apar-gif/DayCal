@@ -752,7 +752,7 @@
 </div>
 
 <!-- Draggable + resizable timer panel -->
-<div id="timer-block" style="position:fixed;left:16px;bottom:24px;width:220px;height:200px;min-height:140px;max-height:480px;background:var(--bg);border:.5px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.1);display:flex;flex-direction:column;z-index:500;overflow:hidden;">
+<div id="timer-block" style="position:fixed;left:16px;bottom:24px;width:220px;height:200px;min-height:140px;max-height:480px;background:var(--bg);border:.5px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:500;overflow:hidden;">
 
   <!-- Drag + resize header -->
   <div id="timer-drag-handle"
@@ -2552,10 +2552,8 @@ document.addEventListener('click', e => {
     closeNewEvPopover();
   }
 });
-function saveNewEvPopover() {
-  // Title is optional — empty titles are allowed ("(No title)" placeholder shown, stored as '')
+async function saveNewEvPopover() {
   const title = document.getElementById('nep-title').value.trim();
-
   const startTime = document.getElementById('nep-start').value;
   const endTime   = document.getElementById('nep-end').value;
   const location  = document.getElementById('nep-location').value.trim();
@@ -2563,7 +2561,7 @@ function saveNewEvPopover() {
   if (meet && !meet.startsWith('http')) meet = 'https://' + meet;
   const calSel = document.getElementById('nep-cal-select');
   const calId  = (calSel && calSel.selectedOptions[0] && calSel.selectedOptions[0].dataset.calid)
-    ? parseInt(calSel.selectedOptions[0].dataset.calid)
+    ? calSel.selectedOptions[0].dataset.calid
     : (calendars[0] && calendars[0].id) || 1;
 
   if (_editingEvRef) {
@@ -2577,7 +2575,9 @@ function saveNewEvPopover() {
     _editingEvRef.calId     = calId;
     delete _editingEvRef._pendingNew;
 
-    // Apply recurrence (only relevant for newly-created events, not edits of existing ones)
+    // Save to Supabase
+    await dbSaveEvent(_editingEvRef);
+
     if (wasPendingNew) {
       const rule = _buildRecurRule(_nepDate);
       if (rule) {
@@ -2586,10 +2586,11 @@ function saveNewEvPopover() {
         _editingEvRef.recurId = recurId;
         _editingEvRef.recurrenceLabel = recurrenceLabel;
         const base = { ..._editingEvRef };
-        delete base._pendingNew;
-        expandRecurrence(_nepDate, rule).forEach(date => {
-          events.push({ ...base, date, _recurInstance: true });
-        });
+        const recurInstances = expandRecurrence(_nepDate, rule).map(date => ({
+          ...base, date, _recurInstance: true, _dbId: undefined
+        }));
+        recurInstances.forEach(ev => events.push(ev));
+        await Promise.all(recurInstances.map(ev => dbSaveEvent(ev)));
       }
     }
 
@@ -3115,24 +3116,24 @@ function openEditEvPopover(e, ds, evIdx) {
   setTimeout(() => document.getElementById('nep-title').focus(), 50);
 }
 
-function deleteEvFromPopover() {
+async function deleteEvFromPopover() {
   if (!_editingEvRef) return;
   const recurId = _editingEvRef.recurId;
   if (recurId) {
-    // Ask whether to delete just this or all
     if (confirm('Delete all events in this recurring series?')) {
-      // Delete all with same recurId
       for (let i = events.length - 1; i >= 0; i--) {
-        if (events[i].recurId === recurId || events[i]._recurInstance && events[i].recurId === recurId) {
+        if (events[i].recurId === recurId) {
+          await dbDeleteEvent(events[i]);
           events.splice(i, 1);
         }
       }
     } else {
-      // Delete just this one
+      await dbDeleteEvent(_editingEvRef);
       const idx = events.indexOf(_editingEvRef);
       if (idx >= 0) events.splice(idx, 1);
     }
   } else {
+    await dbDeleteEvent(_editingEvRef);
     const idx = events.indexOf(_editingEvRef);
     if (idx >= 0) events.splice(idx, 1);
   }
@@ -3448,7 +3449,7 @@ document.addEventListener('mousedown', e => {
 });
 
 // Delete / Backspace removes the selected event
-document.addEventListener('keydown', e => {
+document.addEventListener('keydown', async e => {
   if (!_selectedEvRef) return;
   // Don't hijack delete/backspace while typing in an input/textarea/select
   const tag = (e.target.tagName || '').toLowerCase();
@@ -3462,6 +3463,7 @@ document.addEventListener('keydown', e => {
     // Recurring event — ask which scope to delete
     showDeleteRecurrenceModal(ev);
   } else {
+    await dbDeleteEvent(ev);
     const idx = events.indexOf(ev);
     if (idx >= 0) events.splice(idx, 1);
     clearEventSelection();
@@ -3479,25 +3481,29 @@ function showDeleteRecurrenceModal(ev) {
   overlay.classList.add('open');
 }
 
-function deleteRecurrenceScope(scope) {
+async function deleteRecurrenceScope(scope) {
   const ev = _selectedEvRef;
   document.getElementById('delete-recur-overlay').classList.remove('open');
   if (!ev) return;
 
   if (scope === 'this') {
+    await dbDeleteEvent(ev);
     const idx = events.indexOf(ev);
     if (idx >= 0) events.splice(idx, 1);
   } else if (scope === 'future') {
-    // Delete this and all instances on/after this event's date with same recurId
     const cutoff = ev.date;
     for (let i = events.length - 1; i >= 0; i--) {
       if (events[i].recurId === ev.recurId && events[i].date >= cutoff) {
+        await dbDeleteEvent(events[i]);
         events.splice(i, 1);
       }
     }
   } else if (scope === 'all') {
     for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i].recurId === ev.recurId) events.splice(i, 1);
+      if (events[i].recurId === ev.recurId) {
+        await dbDeleteEvent(events[i]);
+        events.splice(i, 1);
+      }
     }
   }
 
@@ -3580,6 +3586,9 @@ async function authSignOut() {
   taskNextId = 1; groupNextId = 1; nextId = 3;
   render(); renderSidebar(); renderTasks();
   document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('app').classList.remove('authenticated');
+  const timerBlock2 = document.getElementById('timer-block');
+  if (timerBlock2) timerBlock2.style.display = 'none';
 }
 
 // ── Listen for auth state changes ──
@@ -3588,6 +3597,8 @@ _supa.auth.onAuthStateChange(async (event, session) => {
     _supaUser = session.user;
     document.getElementById('auth-overlay').classList.add('hidden');
     document.getElementById('app').classList.add('authenticated');
+    const timerBlock = document.getElementById('timer-block');
+    if (timerBlock) timerBlock.style.display = 'flex';
     const mnav = document.getElementById('mobile-nav');
     if (mnav) mnav.style.display = '';
     await loadFromSupabase();
@@ -3783,42 +3794,17 @@ async function dbDeleteGroup(group) {
   await _supa.from('groups').delete().eq('id', group._dbId);
 }
 
-// ── Patch saveNewEvPopover to also save to Supabase ──
-const _origSaveNewEvForSupa = saveNewEvPopover;
-saveNewEvPopover = async function() {
-  _origSaveNewEvForSupa();
-  if (!_supaUser) return;
-  // Save all events that don't have a _dbId yet (newly created)
-  for (const ev of events) {
-    if (!ev._dbId && !ev._pendingNew) await dbSaveEvent(ev);
-  }
-};
+// saveNewEvPopover saves to Supabase directly (async)
 
-// ── Patch render to sync in background when logged in ──
-const _origRenderForSupa = render;
-render = function() {
-  _origRenderForSupa();
-  if (_supaUser) {
-    // Sync any unsaved events in background (debounced)
-    clearTimeout(render._syncTimer);
-    render._syncTimer = setTimeout(async () => {
-      for (const ev of events) {
-        if (!ev._dbId && !ev._pendingNew) await dbSaveEvent(ev);
-      }
-    }, 1000);
-  }
-};
+// render sync removed — saves happen explicitly in saveNewEvPopover
 
 // ── Sign out any existing session on every page load ──
-// This ensures the user must sign in every time they open the app
+// Auth overlay is visible by default (in HTML), hide only after confirmed sign-in
 (async () => {
   try {
-    await _supa.auth.signOut(); // clear any saved session
+    await _supa.auth.signOut();
   } catch(e) {}
-  // Always show sign in screen
-  document.getElementById('auth-overlay').classList.remove('hidden');
-  const ls = document.getElementById('loading-screen');
-  if (ls) ls.classList.add('hidden');
+  // Auth overlay already visible by default — nothing to do here
 })();
 
 
@@ -4060,7 +4046,7 @@ if (isMobile()) {
 </div>
 
 <!-- Auth overlay -->
-<div class="auth-overlay hidden" id="auth-overlay">
+<div class="auth-overlay" id="auth-overlay">
   <div class="auth-box">
     <div class="auth-logo"><i class="ti ti-calendar-time" style="color:var(--accent);font-size:26px;"></i> DayCal</div>
     <div class="auth-sub" id="auth-sub">Sign in to your calendar</div>
