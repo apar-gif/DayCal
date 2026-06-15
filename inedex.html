@@ -497,7 +497,7 @@
     /* Day/week grid — slightly smaller rows */
     .day-hour-row{height:48px;}
     .day-grid-wrap{max-height:calc(100vh - 180px);}
-    .week-cols-wrap{height:${24*48}px!important;}
+    .week-cols-wrap{height:1152px!important;}
 
     /* Tasks section — full width below calendar */
     .tasks-section{border-radius:10px;}
@@ -505,19 +505,17 @@
     /* Timer — smaller on mobile */
     #timer-block{width:170px!important;}
 
-    /* Bottom nav bar */
-    .mobile-nav{display:flex;}
   }
 
-  /* Hide mobile nav on desktop */
+  /* Mobile nav bar — hidden on desktop, shown on mobile */
   .mobile-nav{display:none;position:fixed;bottom:0;left:0;right:0;height:56px;background:var(--bg);border-top:.5px solid var(--border);z-index:350;align-items:stretch;}
   .mobile-nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;color:var(--text3);background:none;border:none;border-radius:0;cursor:pointer;padding:4px 0;transition:color .15s;}
   .mobile-nav-btn.active{color:var(--accent);}
   .mobile-nav-btn i{font-size:20px;}
 
-  /* Add bottom padding on mobile so content isn't behind the nav bar */
   @media (max-width: 768px) {
     body{padding-bottom:64px;}
+    .mobile-nav{display:flex;}
   }
 </style>
 </head>
