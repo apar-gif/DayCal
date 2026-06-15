@@ -3526,12 +3526,7 @@ function cancelDeleteRecurrence() {
 
 const SUPA_URL = 'https://jorgeoazofhkvqrgdbum.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impvcmdlb2F6b2Zoa3ZxcmdkYnVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTgyNDcsImV4cCI6MjA5Njk3NDI0N30.bkDQWIryo9-2W4_eE9_vFp0D3XFbTa94ZFpazkEyKyk';
-const _supa = supabase.createClient(SUPA_URL, SUPA_KEY, {
-  auth: {
-    flowType: 'pkce',
-    redirectTo: 'https://apar-gif.github.io/DayCal'
-  }
-});
+const _supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 let _supaUser = null;
 let _authMode = 'signin'; // 'signin' | 'signup'
@@ -3631,16 +3626,26 @@ async function authSignOut() {
 _supa.auth.onAuthStateChange(async (event, session) => {
   if (event === 'SIGNED_IN' && session && session.user) {
     _supaUser = session.user;
-    document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('app').classList.add('authenticated');
-    const timerBlock = document.getElementById('timer-block');
-    if (timerBlock) timerBlock.style.display = 'flex';
-    const mnav = document.getElementById('mobile-nav');
-    if (mnav) mnav.style.display = '';
-    await loadFromSupabase();
-    render(); renderSidebar(); renderTasks();
-    showUserBar();
-    if (typeof isMobile === 'function' && isMobile()) mobileNav('cal');
+    // Wait for DOM to be ready before touching elements
+    const run = async () => {
+      const authOverlay = document.getElementById('auth-overlay');
+      const appEl = document.getElementById('app');
+      const timerBlock = document.getElementById('timer-block');
+      const mnav = document.getElementById('mobile-nav');
+      if (authOverlay) authOverlay.classList.add('hidden');
+      if (appEl) appEl.classList.add('authenticated');
+      if (timerBlock) timerBlock.style.display = 'flex';
+      if (mnav) mnav.style.display = '';
+      await loadFromSupabase();
+      render(); renderSidebar(); renderTasks();
+      showUserBar();
+      if (typeof isMobile === 'function' && isMobile()) mobileNav('cal');
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run);
+    } else {
+      await run();
+    }
   }
 });
 
