@@ -24,7 +24,8 @@
   .dark .nav-btn:hover{background:var(--bg2);border-color:var(--border2);color:var(--text);}
 
   /* ── Layout ── */
-  .app{display:flex;gap:0;}
+  .app{display:none;gap:0;}
+  .app.authenticated{display:flex;}
   .sidebar{width:220px;flex-shrink:0;border:.5px solid var(--border);border-radius:10px;padding:14px 10px;display:flex;flex-direction:column;gap:2px;margin-right:16px;background:var(--bg);align-self:stretch;}
   .main{flex:1;min-width:0;display:flex;flex-direction:column;gap:20px;}
 
@@ -642,7 +643,7 @@
   </div>
 </div>
 
-<div class="app" id="app" style="display:none;">
+<div class="app" id="app">
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="sidebar-header">
@@ -3577,14 +3578,19 @@ _supa.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user) {
     _supaUser = session.user;
     document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('app').style.display = 'flex'; // show the app
+    document.getElementById('app').classList.add('authenticated'); // show the app
+    const mnav = document.getElementById('mobile-nav');
+    if (mnav) mnav.style.display = '';
     await loadFromSupabase();
     render(); renderSidebar(); renderTasks();
     showUserBar();
+    if (isMobile()) mobileNav('cal');
   } else {
     _supaUser = null;
     document.getElementById('auth-overlay').classList.remove('hidden');
-    document.getElementById('app').style.display = 'none'; // hide the app
+    document.getElementById('app').classList.remove('authenticated'); // hide the app
+    const mnav = document.getElementById('mobile-nav');
+    if (mnav) mnav.style.display = 'none';
     hideUserBar();
   }
 });
@@ -3825,6 +3831,8 @@ function isMobile() { return window.innerWidth <= 768; }
 
 function mobileNav(tab) {
   if (!isMobile()) return;
+  // Don't allow tab switching if not signed in
+  if (!_supaUser) return;
 
   // Reset all buttons
   document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
@@ -4066,7 +4074,7 @@ if (isMobile()) {
 
 
 <!-- Mobile bottom nav -->
-<div class="mobile-nav" id="mobile-nav">
+<div class="mobile-nav" id="mobile-nav" style="display:none;">
   <button class="mobile-nav-btn active" id="mnav-cal" onclick="mobileNav('cal')">
     <i class="ti ti-calendar"></i>
     <span>Calendar</span>
