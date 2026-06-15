@@ -518,6 +518,13 @@
     body{padding-bottom:64px;}
     .mobile-nav{display:flex;}
   }
+
+  /* Loading screen */
+  .loading-screen{position:fixed;inset:0;background:var(--bg);z-index:9998;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;}
+  .loading-screen.hidden{display:none;}
+  .loading-spinner{width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loading-screen p{font-size:13px;color:var(--text3);}
 </style>
 </head>
 <body>
@@ -1597,7 +1604,9 @@ function renderYear(){
   h+='</div>';document.getElementById('cal-body').innerHTML=h;
 }
 
-loadFromStorage();renderSidebar();renderNcfSwatches();render();renderTasks();
+// Don't render on startup — wait for Supabase auth state to confirm session
+// renderSidebar/render/renderTasks called inside onAuthStateChange after login
+renderNcfSwatches(); // safe to call (just populates color swatches, no auth needed)
 
 // ── Task Timer ──
 let timerTaskId=null;
@@ -3575,10 +3584,14 @@ async function authSignOut() {
 
 // ── Listen for auth state changes ──
 _supa.auth.onAuthStateChange(async (event, session) => {
+  // Always hide loading screen once we know the auth state
+  const loadingScreen = document.getElementById('loading-screen');
+  if (loadingScreen) loadingScreen.classList.add('hidden');
+
   if (session && session.user) {
     _supaUser = session.user;
     document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('app').classList.add('authenticated'); // show the app
+    document.getElementById('app').classList.add('authenticated');
     const mnav = document.getElementById('mobile-nav');
     if (mnav) mnav.style.display = '';
     await loadFromSupabase();
@@ -3587,8 +3600,8 @@ _supa.auth.onAuthStateChange(async (event, session) => {
     if (isMobile()) mobileNav('cal');
   } else {
     _supaUser = null;
+    document.getElementById('app').classList.remove('authenticated');
     document.getElementById('auth-overlay').classList.remove('hidden');
-    document.getElementById('app').classList.remove('authenticated'); // hide the app
     const mnav = document.getElementById('mobile-nav');
     if (mnav) mnav.style.display = 'none';
     hideUserBar();
@@ -3808,16 +3821,17 @@ render = function() {
 };
 
 // ── Check for existing session on load ──
-// Show auth overlay immediately, hide it only if a valid session is found
-document.getElementById('auth-overlay').classList.remove('hidden');
-(async () => {
-  const { data: { session } } = await _supa.auth.getSession();
-  if (session && session.user) {
-    // onAuthStateChange will handle hiding the overlay and loading data
-  } else {
+// Show loading screen while we check — onAuthStateChange handles the rest
+document.getElementById('auth-overlay').classList.add('hidden'); // hide until we know
+document.getElementById('loading-screen').classList.remove('hidden'); // show spinner
+// Safety: if Supabase takes > 5s, show auth screen anyway
+setTimeout(() => {
+  const ls = document.getElementById('loading-screen');
+  if (ls && !ls.classList.contains('hidden')) {
+    ls.classList.add('hidden');
     document.getElementById('auth-overlay').classList.remove('hidden');
   }
-})();
+}, 5000);
 
 
 // apple-touch-icon served as static file
@@ -4050,6 +4064,12 @@ if (isMobile()) {
   </div>
 </div>
 
+
+<!-- Loading screen — shown while waiting for Supabase session check -->
+<div class="loading-screen" id="loading-screen">
+  <div class="loading-spinner"></div>
+  <p>Loading DayCal…</p>
+</div>
 
 <!-- Auth overlay -->
 <div class="auth-overlay" id="auth-overlay">
