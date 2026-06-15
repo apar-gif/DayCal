@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>"/>
 <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+<meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="DayCal"/>
@@ -3562,11 +3563,21 @@ async function authSubmit() {
 
   if (!email || !password) { err.textContent = 'Please enter email and password.'; return; }
 
+  // Show loading state
+  const btn = document.getElementById('auth-submit-btn');
+  const origText = btn.textContent;
+  btn.textContent = 'Loading…';
+  btn.disabled = true;
+
   if (_authMode === 'signup') {
     const confirm = document.getElementById('auth-confirm').value;
-    if (password !== confirm) { err.textContent = 'Passwords do not match.'; return; }
+    if (password !== confirm) {
+      err.textContent = 'Passwords do not match.';
+      btn.textContent = origText; btn.disabled = false;
+      return;
+    }
     try {
-      const { data, error } = await _supa.auth.signUp({ email, password });
+      const { data, error } = await _supa.auth.signUp({ email, password, options: { emailRedirectTo: 'https://apar-gif.github.io/DayCal' } });
       if (error) { err.textContent = error.message; return; }
       // If user already exists but unconfirmed, data.user will exist with identities=[]
       if (data?.user?.identities?.length === 0) {
@@ -3578,11 +3589,16 @@ async function authSubmit() {
     } catch(e) {
       err.textContent = 'Sign up failed: ' + (e.message || JSON.stringify(e));
     }
+    btn.textContent = origText; btn.disabled = false;
     return;
   }
 
   const { data, error } = await _supa.auth.signInWithPassword({ email, password });
-  if (error) { err.textContent = error.message; return; }
+  if (error) {
+    err.textContent = error.message;
+    btn.textContent = origText; btn.disabled = false;
+    return;
+  }
   // onAuthStateChange will handle the rest
 }
 
