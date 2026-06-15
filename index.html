@@ -3837,12 +3837,13 @@ async function dbDeleteGroup(group) {
 
 
 
-// ── Handle PKCE auth callback (email confirmation redirect) ──
+// ── Page load auth handler ──
+// Handles both: PKCE email confirmation callback AND regular page load (sign out)
 (async () => {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
 
-  // Show any errors from Supabase redirect
+  // Check for error in redirect
   const error = params.get('error') || hashParams.get('error');
   const errorDesc = params.get('error_description') || hashParams.get('error_description');
   if (error) {
@@ -3852,17 +3853,22 @@ async function dbDeleteGroup(group) {
       errEl.textContent = decodeURIComponent((errorDesc || error).replace(/\+/g, ' '));
     }
     window.history.replaceState({}, '', window.location.pathname);
+    await _supa.auth.signOut();
     return;
   }
 
-  // Exchange PKCE code for session (email confirmation)
+  // Check for PKCE confirmation code
   const code = params.get('code');
   if (code) {
     try {
       await _supa.auth.exchangeCodeForSession(code);
       window.history.replaceState({}, '', window.location.pathname);
-      // Sign out so user must sign in manually
       await _supa.auth.signOut();
+      // Make sure sign-in screen is visible
+      document.getElementById('auth-overlay').classList.remove('hidden');
+      document.getElementById('app').classList.remove('authenticated');
+      const timerBlock = document.getElementById('timer-block');
+      if (timerBlock) timerBlock.style.display = 'none';
       const errEl = document.getElementById('auth-err');
       if (errEl) {
         errEl.style.color = 'var(--accent)';
@@ -3871,17 +3877,15 @@ async function dbDeleteGroup(group) {
     } catch(e) {
       const errEl = document.getElementById('auth-err');
       if (errEl) errEl.textContent = 'Confirmation failed. Please try again.';
+      await _supa.auth.signOut();
     }
+    return;
   }
-})();
 
-// ── Sign out any existing session on every page load ──
-// Auth overlay is visible by default (in HTML), hide only after confirmed sign-in
-(async () => {
+  // Regular page load — sign out any existing session
   try {
     await _supa.auth.signOut();
   } catch(e) {}
-  // Auth overlay already visible by default — nothing to do here
 })();
 
 
