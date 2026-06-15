@@ -654,7 +654,7 @@
   </div>
 </div>
 
-<div class="app" id="app">
+<div class="app" id="app" style="visibility:hidden;opacity:0;">
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="sidebar-header">
@@ -756,7 +756,7 @@
 </div>
 
 <!-- Draggable + resizable timer panel -->
-<div id="timer-block" style="position:fixed;left:16px;bottom:24px;width:220px;height:200px;min-height:140px;max-height:480px;background:var(--bg);border:.5px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:500;overflow:hidden;">
+<div id="timer-block" style="position:fixed;left:16px;bottom:24px;width:220px;height:200px;min-height:140px;max-height:480px;background:var(--bg);border:.5px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:500;overflow:hidden;visibility:hidden;">
 
   <!-- Drag + resize header -->
   <div id="timer-drag-handle"
@@ -3637,7 +3637,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       const timerBlock = document.getElementById('timer-block');
       const mnav = document.getElementById('mobile-nav');
       if (authOverlay) authOverlay.classList.add('hidden');
-      if (appEl) appEl.classList.add('authenticated');
+      if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = ''; appEl.style.opacity = ''; }
       if (timerBlock) timerBlock.style.display = 'flex';
       if (mnav) mnav.style.display = '';
       await loadFromSupabase();
@@ -3847,56 +3847,63 @@ async function dbDeleteGroup(group) {
 
 
 // ── Page load auth handler ──
-// Handles both: PKCE email confirmation callback AND regular page load (sign out)
 (async () => {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
 
-  // Check for error in redirect
+  // Helper — show sign-in screen cleanly
+  function showSignIn(message, isError) {
+    window.history.replaceState({}, '', window.location.pathname);
+    const authOverlay = document.getElementById('auth-overlay');
+    const appEl = document.getElementById('app');
+    const timerBlock = document.getElementById('timer-block');
+    if (authOverlay) authOverlay.classList.remove('hidden');
+    if (appEl) { appEl.classList.remove('authenticated'); appEl.style.visibility = 'hidden'; appEl.style.opacity = '0'; }
+    if (timerBlock) timerBlock.style.display = 'none';
+    if (message) {
+      const errEl = document.getElementById('auth-err');
+      if (errEl) {
+        errEl.style.color = isError ? 'var(--danger)' : 'var(--accent)';
+        errEl.textContent = message;
+      }
+    }
+  }
+
+  // Check for errors
   const error = params.get('error') || hashParams.get('error');
   const errorDesc = params.get('error_description') || hashParams.get('error_description');
   if (error) {
-    const errEl = document.getElementById('auth-err');
-    if (errEl) {
-      errEl.style.color = 'var(--danger)';
-      errEl.textContent = decodeURIComponent((errorDesc || error).replace(/\+/g, ' '));
-    }
-    window.history.replaceState({}, '', window.location.pathname);
+    _confirmingEmail = true;
     await _supa.auth.signOut();
+    _confirmingEmail = false;
+    showSignIn(decodeURIComponent((errorDesc || error).replace(/\+/g, ' ')), true);
     return;
   }
 
-  // Check for PKCE confirmation code
+  // Check for access_token in hash (direct Supabase verify link)
+  const accessToken = hashParams.get('access_token');
+  const tokenType = hashParams.get('type');
+  if (accessToken || tokenType) {
+    _confirmingEmail = true;
+    await _supa.auth.signOut();
+    _confirmingEmail = false;
+    showSignIn('✓ Email confirmed! Please sign in.');
+    return;
+  }
+
+  // Check for PKCE code
   const code = params.get('code');
   if (code) {
-    _confirmingEmail = true; // set BEFORE anything async so onAuthStateChange is blocked immediately
-    try {
-      await _supa.auth.exchangeCodeForSession(code);
-      window.history.replaceState({}, '', window.location.pathname);
-      await _supa.auth.signOut();
-      _confirmingEmail = false;
-      // Make sure sign-in screen is visible
-      document.getElementById('auth-overlay').classList.remove('hidden');
-      document.getElementById('app').classList.remove('authenticated');
-      const timerBlock = document.getElementById('timer-block');
-      if (timerBlock) timerBlock.style.display = 'none';
-      const errEl = document.getElementById('auth-err');
-      if (errEl) {
-        errEl.style.color = 'var(--accent)';
-        errEl.textContent = '✓ Email confirmed! Please sign in.';
-      }
-    } catch(e) {
-      const errEl = document.getElementById('auth-err');
-      if (errEl) errEl.textContent = 'Confirmation failed. Please try again.';
-      await _supa.auth.signOut();
-    }
+    _confirmingEmail = true;
+    try { await _supa.auth.exchangeCodeForSession(code); } catch(e) {}
+    await _supa.auth.signOut();
+    _confirmingEmail = false;
+    showSignIn('✓ Email confirmed! Please sign in.');
     return;
   }
 
-  // Regular page load — sign out any existing session
-  try {
-    await _supa.auth.signOut();
-  } catch(e) {}
+  // Regular page load — sign out
+  try { await _supa.auth.signOut(); } catch(e) {}
 })();
 
 
