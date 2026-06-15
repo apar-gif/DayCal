@@ -3525,7 +3525,12 @@ function cancelDeleteRecurrence() {
 
 const SUPA_URL = 'https://jorgeoazofhkvqrgdbum.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impvcmdlb2F6b2Zoa3ZxcmdkYnVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTgyNDcsImV4cCI6MjA5Njk3NDI0N30.bkDQWIryo9-2W4_eE9_vFp0D3XFbTa94ZFpazkEyKyk';
-const _supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+const _supa = supabase.createClient(SUPA_URL, SUPA_KEY, {
+  auth: {
+    flowType: 'pkce',
+    redirectTo: 'https://apar-gif.github.io/DayCal'
+  }
+});
 
 let _supaUser = null;
 let _authMode = 'signin'; // 'signin' | 'signup'
@@ -3797,6 +3802,47 @@ async function dbDeleteGroup(group) {
 // saveNewEvPopover saves to Supabase directly (async)
 
 // render sync removed — saves happen explicitly in saveNewEvPopover
+
+
+
+
+// ── Handle PKCE auth callback (email confirmation redirect) ──
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.slice(1));
+
+  // Show any errors from Supabase redirect
+  const error = params.get('error') || hashParams.get('error');
+  const errorDesc = params.get('error_description') || hashParams.get('error_description');
+  if (error) {
+    const errEl = document.getElementById('auth-err');
+    if (errEl) {
+      errEl.style.color = 'var(--danger)';
+      errEl.textContent = decodeURIComponent((errorDesc || error).replace(/\+/g, ' '));
+    }
+    window.history.replaceState({}, '', window.location.pathname);
+    return;
+  }
+
+  // Exchange PKCE code for session (email confirmation)
+  const code = params.get('code');
+  if (code) {
+    try {
+      await _supa.auth.exchangeCodeForSession(code);
+      window.history.replaceState({}, '', window.location.pathname);
+      // Sign out so user must sign in manually
+      await _supa.auth.signOut();
+      const errEl = document.getElementById('auth-err');
+      if (errEl) {
+        errEl.style.color = 'var(--accent)';
+        errEl.textContent = '✓ Email confirmed! Please sign in.';
+      }
+    } catch(e) {
+      const errEl = document.getElementById('auth-err');
+      if (errEl) errEl.textContent = 'Confirmation failed. Please try again.';
+    }
+  }
+})();
 
 // ── Sign out any existing session on every page load ──
 // Auth overlay is visible by default (in HTML), hide only after confirmed sign-in
