@@ -3554,6 +3554,12 @@ async function authSubmit() {
   const err      = document.getElementById('auth-err');
   err.textContent = '';
 
+  // Check Supabase is loaded
+  if (typeof _supa === 'undefined' || !_supa) {
+    err.textContent = 'Connection error — please refresh the page and try again.';
+    return;
+  }
+
   if (!email || !password) { err.textContent = 'Please enter email and password.'; return; }
 
   if (_authMode === 'signup') {
