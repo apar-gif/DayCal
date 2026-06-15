@@ -3530,6 +3530,7 @@ const _supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 let _supaUser = null;
 let _authMode = 'signin'; // 'signin' | 'signup'
+let _confirmingEmail = false; // blocks onAuthStateChange during email confirmation
 
 // ── Auth UI helpers ──
 function toggleAuthMode() {
@@ -3624,7 +3625,7 @@ async function authSignOut() {
 
 // ── Listen for auth state changes ──
 _supa.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'SIGNED_IN' && session && session.user) {
+  if (event === 'SIGNED_IN' && session && session.user && !_confirmingEmail) {
     _supaUser = session.user;
     // Wait for DOM to be ready before touching elements
     const run = async () => {
@@ -3866,9 +3867,11 @@ async function dbDeleteGroup(group) {
   const code = params.get('code');
   if (code) {
     try {
+      _confirmingEmail = true;
       await _supa.auth.exchangeCodeForSession(code);
       window.history.replaceState({}, '', window.location.pathname);
       await _supa.auth.signOut();
+      _confirmingEmail = false;
       // Make sure sign-in screen is visible
       document.getElementById('auth-overlay').classList.remove('hidden');
       document.getElementById('app').classList.remove('authenticated');
