@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>"/>
-<link rel="apple-touch-icon" id="apple-touch-icon" href=""/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="DayCal"/>
@@ -3816,50 +3816,7 @@ document.getElementById('auth-overlay').classList.remove('hidden');
 })();
 
 
-// Generate apple-touch-icon via canvas (iOS needs a real PNG)
-(function() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 180; canvas.height = 180;
-  const ctx = canvas.getContext('2d');
-  // Background
-  const grad = ctx.createLinearGradient(0, 0, 180, 180);
-  grad.addColorStop(0, '#4A90D9');
-  grad.addColorStop(1, '#2563b0');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.roundRect(0, 0, 180, 180, 36);
-  ctx.fill();
-  // Calendar body
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.roundRect(28, 52, 124, 104, 10);
-  ctx.fill();
-  // Header strip
-  ctx.fillStyle = '#2563b0';
-  ctx.beginPath();
-  ctx.roundRect(28, 52, 124, 34, [10, 10, 0, 0]);
-  ctx.fill();
-  // Rings
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath(); ctx.roundRect(58, 38, 10, 28, 5); ctx.fill();
-  ctx.beginPath(); ctx.roundRect(112, 38, 10, 28, 5); ctx.fill();
-  // Grid dots
-  ctx.fillStyle = '#4A90D9';
-  const cols = [50, 85, 120, 155], rows2 = [105, 130];
-  cols.forEach(x => rows2.forEach(y => {
-    if (x < 152 && y < 152) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2); ctx.fill(); }
-  }));
-  // Today highlight
-  ctx.fillStyle = '#4A90D9';
-  ctx.beginPath(); ctx.arc(50, 105, 10, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 11px -apple-system,sans-serif';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(new Date().getDate(), 50, 105);
-
-  const link = document.getElementById('apple-touch-icon');
-  if (link) link.href = canvas.toDataURL('image/png');
-})();
+// apple-touch-icon served as static file
 
 
 // ══════════════════════════════════════════════════════════════
