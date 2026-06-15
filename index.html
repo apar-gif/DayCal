@@ -520,7 +520,7 @@
   }
 
   /* Loading screen */
-  .loading-screen{position:fixed;inset:0;background:var(--bg);z-index:9998;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;}
+  .loading-screen{position:fixed;inset:0;background:var(--bg);z-index:10000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;}
   .loading-screen.hidden{display:none;}
   .loading-spinner{width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -3824,14 +3824,14 @@ render = function() {
 // Show loading screen while we check — onAuthStateChange handles the rest
 document.getElementById('auth-overlay').classList.add('hidden'); // hide until we know
 document.getElementById('loading-screen').classList.remove('hidden'); // show spinner
-// Safety: if Supabase takes > 5s, show auth screen anyway
+// Safety: if Supabase takes > 2s, show auth screen anyway
 setTimeout(() => {
   const ls = document.getElementById('loading-screen');
   if (ls && !ls.classList.contains('hidden')) {
     ls.classList.add('hidden');
     document.getElementById('auth-overlay').classList.remove('hidden');
   }
-}, 5000);
+}, 2000);
 
 
 // apple-touch-icon served as static file
@@ -4072,7 +4072,7 @@ if (isMobile()) {
 </div>
 
 <!-- Auth overlay -->
-<div class="auth-overlay" id="auth-overlay">
+<div class="auth-overlay hidden" id="auth-overlay">
   <div class="auth-box">
     <div class="auth-logo"><i class="ti ti-calendar-time" style="color:var(--accent);font-size:26px;"></i> DayCal</div>
     <div class="auth-sub" id="auth-sub">Sign in to your calendar</div>
