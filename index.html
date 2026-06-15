@@ -3526,15 +3526,11 @@ function cancelDeleteRecurrence() {
 
 const SUPA_URL = 'https://jorgeoazofhkvqrgdbum.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impvcmdlb2F6b2Zoa3ZxcmdkYnVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzOTgyNDcsImV4cCI6MjA5Njk3NDI0N30.bkDQWIryo9-2W4_eE9_vFp0D3XFbTa94ZFpazkEyKyk';
-const _supa = supabase.createClient(SUPA_URL, SUPA_KEY, {
-  auth: {
-    flowType: 'pkce',
-    redirectTo: 'https://apar-gif.github.io/DayCal'
-  }
-});
+const _supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 let _supaUser = null;
 let _authMode = 'signin'; // 'signin' | 'signup'
+let _confirmingEmail = false; // blocks onAuthStateChange during email confirmation
 
 // ── Auth UI helpers ──
 function toggleAuthMode() {
@@ -3629,18 +3625,28 @@ async function authSignOut() {
 
 // ── Listen for auth state changes ──
 _supa.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'SIGNED_IN' && session && session.user) {
+  if (event === 'SIGNED_IN' && session && session.user && !_confirmingEmail) {
     _supaUser = session.user;
-    document.getElementById('auth-overlay').classList.add('hidden');
-    document.getElementById('app').classList.add('authenticated');
-    const timerBlock = document.getElementById('timer-block');
-    if (timerBlock) timerBlock.style.display = 'flex';
-    const mnav = document.getElementById('mobile-nav');
-    if (mnav) mnav.style.display = '';
-    await loadFromSupabase();
-    render(); renderSidebar(); renderTasks();
-    showUserBar();
-    if (typeof isMobile === 'function' && isMobile()) mobileNav('cal');
+    // Wait for DOM to be ready before touching elements
+    const run = async () => {
+      const authOverlay = document.getElementById('auth-overlay');
+      const appEl = document.getElementById('app');
+      const timerBlock = document.getElementById('timer-block');
+      const mnav = document.getElementById('mobile-nav');
+      if (authOverlay) authOverlay.classList.add('hidden');
+      if (appEl) appEl.classList.add('authenticated');
+      if (timerBlock) timerBlock.style.display = 'flex';
+      if (mnav) mnav.style.display = '';
+      await loadFromSupabase();
+      render(); renderSidebar(); renderTasks();
+      showUserBar();
+      if (typeof isMobile === 'function' && isMobile()) mobileNav('cal');
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', run);
+    } else {
+      await run();
+    }
   }
 });
 
@@ -3837,12 +3843,13 @@ async function dbDeleteGroup(group) {
 
 
 
-// ── Handle PKCE auth callback (email confirmation redirect) ──
+// ── Page load auth handler ──
+// Handles both: PKCE email confirmation callback AND regular page load (sign out)
 (async () => {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
 
-  // Show any errors from Supabase redirect
+  // Check for error in redirect
   const error = params.get('error') || hashParams.get('error');
   const errorDesc = params.get('error_description') || hashParams.get('error_description');
   if (error) {
@@ -3852,17 +3859,24 @@ async function dbDeleteGroup(group) {
       errEl.textContent = decodeURIComponent((errorDesc || error).replace(/\+/g, ' '));
     }
     window.history.replaceState({}, '', window.location.pathname);
+    await _supa.auth.signOut();
     return;
   }
 
-  // Exchange PKCE code for session (email confirmation)
+  // Check for PKCE confirmation code
   const code = params.get('code');
   if (code) {
     try {
+      _confirmingEmail = true;
       await _supa.auth.exchangeCodeForSession(code);
       window.history.replaceState({}, '', window.location.pathname);
-      // Sign out so user must sign in manually
       await _supa.auth.signOut();
+      _confirmingEmail = false;
+      // Make sure sign-in screen is visible
+      document.getElementById('auth-overlay').classList.remove('hidden');
+      document.getElementById('app').classList.remove('authenticated');
+      const timerBlock = document.getElementById('timer-block');
+      if (timerBlock) timerBlock.style.display = 'none';
       const errEl = document.getElementById('auth-err');
       if (errEl) {
         errEl.style.color = 'var(--accent)';
@@ -3871,17 +3885,15 @@ async function dbDeleteGroup(group) {
     } catch(e) {
       const errEl = document.getElementById('auth-err');
       if (errEl) errEl.textContent = 'Confirmation failed. Please try again.';
+      await _supa.auth.signOut();
     }
+    return;
   }
-})();
 
-// ── Sign out any existing session on every page load ──
-// Auth overlay is visible by default (in HTML), hide only after confirmed sign-in
-(async () => {
+  // Regular page load — sign out any existing session
   try {
     await _supa.auth.signOut();
   } catch(e) {}
-  // Auth overlay already visible by default — nothing to do here
 })();
 
 
