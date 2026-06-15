@@ -3584,9 +3584,7 @@ async function authSignOut() {
 
 // ── Listen for auth state changes ──
 _supa.auth.onAuthStateChange(async (event, session) => {
-  // Only handle explicit sign-in/sign-out events, not INITIAL_SESSION
-  // Initial load is handled by getSession() above
-  if (event === 'SIGNED_IN') {
+  if (event === 'SIGNED_IN' && session && session.user) {
     _supaUser = session.user;
     document.getElementById('auth-overlay').classList.add('hidden');
     document.getElementById('app').classList.add('authenticated');
@@ -3596,13 +3594,6 @@ _supa.auth.onAuthStateChange(async (event, session) => {
     render(); renderSidebar(); renderTasks();
     showUserBar();
     if (typeof isMobile === 'function' && isMobile()) mobileNav('cal');
-  } else if (event === 'SIGNED_OUT') {
-    _supaUser = null;
-    document.getElementById('app').classList.remove('authenticated');
-    document.getElementById('auth-overlay').classList.remove('hidden');
-    const mnav = document.getElementById('mobile-nav');
-    if (mnav) mnav.style.display = 'none';
-    hideUserBar();
   }
 });
 
@@ -3818,35 +3809,16 @@ render = function() {
   }
 };
 
-// ── Session check on load ──
-// Immediately check session — show auth or calendar with no delay, no loading screen
+// ── Sign out any existing session on every page load ──
+// This ensures the user must sign in every time they open the app
 (async () => {
   try {
-    // Hide loading screen immediately
-    const ls = document.getElementById('loading-screen');
-    if (ls) ls.classList.add('hidden');
-
-    const { data: { session } } = await _supa.auth.getSession();
-    if (session && session.user) {
-      _supaUser = session.user;
-      document.getElementById('auth-overlay').classList.add('hidden');
-      document.getElementById('app').classList.add('authenticated');
-      const mnav = document.getElementById('mobile-nav');
-      if (mnav) mnav.style.display = '';
-      await loadFromSupabase();
-      render(); renderSidebar(); renderTasks();
-      showUserBar();
-      if (typeof isMobile === 'function' && isMobile()) mobileNav('cal');
-    } else {
-      // No session — show sign in
-      document.getElementById('auth-overlay').classList.remove('hidden');
-    }
-  } catch(err) {
-    // Supabase failed — show sign in
-    const ls = document.getElementById('loading-screen');
-    if (ls) ls.classList.add('hidden');
-    document.getElementById('auth-overlay').classList.remove('hidden');
-  }
+    await _supa.auth.signOut(); // clear any saved session
+  } catch(e) {}
+  // Always show sign in screen
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  const ls = document.getElementById('loading-screen');
+  if (ls) ls.classList.add('hidden');
 })();
 
 
