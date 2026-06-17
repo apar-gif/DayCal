@@ -486,7 +486,7 @@
 
     /* Hide sidebar — shown via bottom sheet instead */
     .sidebar{display:none;}
-    .sidebar.mobile-open{display:flex;position:fixed;inset:0;z-index:400;width:100%;height:100%;border-radius:0;margin:0;overflow-y:auto;}
+    .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:56px;z-index:400;width:100%;border-radius:0;margin:0;overflow-y:auto;padding-bottom:8px;}
 
     /* Main takes full width */
     .main{gap:12px;}
@@ -529,6 +529,13 @@
   .loading-spinner{width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
   .loading-screen p{font-size:13px;color:var(--text3);}
+
+  /* Mobile timer panel — full screen content area */
+  @media (max-width: 768px) {
+    .mobile-timer-panel{display:none;position:fixed;top:0;left:0;right:0;bottom:56px;background:var(--bg);z-index:300;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;padding:0;overflow-y:auto;}
+    .mobile-timer-panel.active{display:flex;}
+    .mobile-timer-panel #timer-block{position:relative!important;left:auto!important;bottom:auto!important;top:auto!important;width:100%!important;max-width:100%!important;height:100%!important;max-height:none!important;min-height:calc(100vh - 56px)!important;border-radius:0!important;border:none!important;box-shadow:none!important;flex:1;}
+  }
 </style>
 </head>
 <body>
@@ -3918,10 +3925,9 @@ function isMobile() { return window.innerWidth <= 768; }
 
 function mobileNav(tab) {
   if (!isMobile()) return;
-  // Don't allow tab switching if not signed in
   if (!_supaUser) return;
 
-  // Reset all buttons
+  // Reset all nav buttons
   document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('mnav-' + tab)?.classList.add('active');
 
@@ -3929,40 +3935,41 @@ function mobileNav(tab) {
   const tasksSection = document.querySelector('.tasks-section');
   const sidebar = document.querySelector('.sidebar');
   const timer = document.getElementById('timer-block');
+  const mobileTimerPanel = document.getElementById('mobile-timer-panel');
 
   // Hide everything first
   if (calSection) calSection.style.display = 'none';
   if (tasksSection) tasksSection.style.display = 'none';
   if (sidebar) sidebar.classList.remove('mobile-open');
-  if (timer) timer.style.display = 'none';
+  if (timer) { timer.style.display = 'none'; timer.style.position = 'fixed'; timer.style.transform = ''; timer.style.left = '16px'; timer.style.bottom = '24px'; timer.style.width = '220px'; }
+  if (mobileTimerPanel) mobileTimerPanel.classList.remove('active');
 
   if (tab === 'cal') {
     if (calSection) calSection.style.display = '';
-    document.getElementById('mnav-cal').classList.add('active');
   } else if (tab === 'tasks') {
     if (tasksSection) tasksSection.style.display = '';
   } else if (tab === 'sidebar') {
-    if (sidebar) {
-      sidebar.classList.add('mobile-open');
-      // Add close button to sidebar on mobile
-      if (!document.getElementById('mobile-sidebar-close')) {
-        const btn = document.createElement('button');
-        btn.id = 'mobile-sidebar-close';
-        btn.innerHTML = '<i class="ti ti-x"></i> Close';
-        btn.style.cssText = 'margin:8px;padding:8px 14px;font-size:13px;border:.5px solid var(--border2);border-radius:7px;background:var(--bg2);color:var(--text);cursor:pointer;';
-        btn.onclick = () => mobileNav('cal');
-        sidebar.insertBefore(btn, sidebar.firstChild);
-      }
-    }
+    // Show sidebar fullscreen with no close button — consistent with tab layout
+    if (sidebar) sidebar.classList.add('mobile-open');
   } else if (tab === 'timer') {
-    if (timer) {
+    if (mobileTimerPanel && timer) {
+      mobileTimerPanel.classList.add('active');
+      if (!mobileTimerPanel.contains(timer)) {
+        mobileTimerPanel.appendChild(timer);
+      }
       timer.style.display = 'flex';
-      timer.style.position = 'fixed';
-      timer.style.left = '50%';
-      timer.style.transform = 'translateX(-50%)';
-      timer.style.bottom = '64px';
-      timer.style.width = '90vw';
-      timer.style.maxWidth = '320px';
+      timer.style.position = 'relative';
+      timer.style.left = '';
+      timer.style.bottom = '';
+      timer.style.transform = '';
+      timer.style.width = '';
+      timer.style.maxWidth = '';
+      timer.style.height = '';
+      timer.style.minHeight = '';
+      timer.style.boxShadow = '';
+      timer.style.border = '';
+      timer.style.borderRadius = '';
+      timer.style.visibility = 'visible';
     }
   }
 }
@@ -3970,15 +3977,31 @@ function mobileNav(tab) {
 // On resize, reset mobile nav if switching back to desktop
 window.addEventListener('resize', () => {
   if (!isMobile()) {
-    // Restore all sections on desktop
     const calSection = document.querySelector('.cal-section');
     const tasksSection = document.querySelector('.tasks-section');
     const sidebar = document.querySelector('.sidebar');
     const timer = document.getElementById('timer-block');
+    const mobileTimerPanel = document.getElementById('mobile-timer-panel');
     if (calSection) calSection.style.display = '';
     if (tasksSection) tasksSection.style.display = '';
     if (sidebar) sidebar.classList.remove('mobile-open');
-    if (timer) { timer.style.display = 'flex'; timer.style.position = 'fixed'; timer.style.left = '16px'; timer.style.transform = ''; timer.style.bottom = '24px'; timer.style.width = '220px'; }
+    if (mobileTimerPanel) mobileTimerPanel.classList.remove('active');
+    // Move timer back to body and restore desktop styles
+    if (timer) {
+      if (!document.body.contains(timer) || timer.parentElement !== document.body) {
+        document.body.appendChild(timer);
+      }
+      timer.style.display = 'flex';
+      timer.style.position = 'fixed';
+      timer.style.left = '16px';
+      timer.style.bottom = '24px';
+      timer.style.transform = '';
+      timer.style.width = '220px';
+      timer.style.maxWidth = '';
+      timer.style.height = '200px';
+      timer.style.boxShadow = '0 4px 20px rgba(0,0,0,.1)';
+      timer.style.borderRadius = '10px';
+    }
   }
 });
 
@@ -4165,6 +4188,11 @@ if (isMobile()) {
   </div>
 </div>
 
+
+<!-- Mobile timer panel -->
+<div class="mobile-timer-panel" id="mobile-timer-panel">
+  <!-- Timer content will be cloned here on mobile -->
+</div>
 
 <!-- Mobile bottom nav -->
 <div class="mobile-nav" id="mobile-nav" style="display:none;">
