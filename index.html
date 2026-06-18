@@ -3721,7 +3721,7 @@ async function loadFromSupabase() {
       }
     }
     calendars = uniqueCals.map(c => ({
-      id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id
+      id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id, _gcalId: c.gcal_id
     }));
   } else {
     // First login — create default calendars
@@ -3747,6 +3747,8 @@ async function loadFromSupabase() {
     recurrenceLabel: e.recurrence_label,
     _recurInstance: e.recur_instance,
     _scheduled: e.scheduled,
+    _gcalEventId: e.gcal_event_id,
+    _gcalCalendarId: e.gcal_calendar_id,
   }));
 
   tasks = (tasksRes.data || []).map(t => ({
@@ -3783,6 +3785,8 @@ async function dbSaveEvent(ev) {
     recurrence_label: ev.recurrenceLabel || null,
     recur_instance: ev._recurInstance || false,
     scheduled: ev._scheduled || false,
+    gcal_event_id: ev._gcalEventId || null,
+    gcal_calendar_id: ev._gcalCalendarId || null,
   };
   if (ev._dbId) {
     await _supa.from('events').update(row).eq('id', ev._dbId);
@@ -3799,7 +3803,7 @@ async function dbDeleteEvent(ev) {
 
 async function dbSaveCalendar(cal) {
   if (!_supaUser) { saveToStorage(); return; }
-  const row = { user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible };
+  const row = { user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible, gcal_id: cal._gcalId || null };
   if (cal._dbId) {
     await _supa.from('calendars').update(row).eq('id', cal._dbId);
   } else {
@@ -4112,11 +4116,12 @@ async function importSelectedGcals() {
 
   if (selectedIds.length === 0) return;
 
-  // Show progress
+  // Show progress with cancel button
   const progress = document.createElement('div');
-  progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border2);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);';
-  progress.textContent = 'Importing Google Calendar events…';
+  progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border2);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);display:flex;align-items:center;gap:12px;';
+  progress.innerHTML = '<span id="gcal-progress-text">Importing Google Calendar events…</span><button onclick="this.closest('div').remove();window._gcalCancelled=true;" style="font-size:11px;padding:2px 8px;border:.5px solid var(--border2);border-radius:5px;background:var(--bg2);color:var(--text);cursor:pointer;">Cancel</button>';
   document.body.appendChild(progress);
+  window._gcalCancelled = false;
 
   const now = new Date();
   const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString();
@@ -4144,11 +4149,20 @@ async function importSelectedGcals() {
 
     // Fetch events
     try {
+      if (window._gcalCancelled) break;
+      const progressText = document.getElementById('gcal-progress-text');
+      if (progressText) progressText.textContent = `Importing ${gcal.summary}…`;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
       const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events?timeMin=${oneYearAgo}&timeMax=${oneYearAhead}&singleEvents=true&orderBy=startTime&maxResults=500`;
       const res = await fetch(url, {
-        headers: { Authorization: 'Bearer ' + _gcalToken }
+        headers: { Authorization: 'Bearer ' + _gcalToken },
+        signal: controller.signal
       });
+      clearTimeout(timeout);
       const data = await res.json();
+      if (data.error) { console.warn('GCal API error:', data.error.message); continue; }
       if (!data.items) continue;
 
       for (const item of data.items) {
@@ -4183,7 +4197,8 @@ async function importSelectedGcals() {
           allDay,
           location: item.location || null,
           meet: item.hangoutLink || null,
-          _gcalEventId: item.id
+          _gcalEventId: item.id,
+          _gcalCalendarId: calId
         };
         events.push(newEv);
         await dbSaveEvent(newEv);
