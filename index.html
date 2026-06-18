@@ -4119,7 +4119,12 @@ async function importSelectedGcals() {
   // Show progress with cancel button
   const progress = document.createElement('div');
   progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border2);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);display:flex;align-items:center;gap:12px;';
-  progress.innerHTML = '<span id="gcal-progress-text">Importing Google Calendar events…</span><button onclick="this.closest('div').remove();window._gcalCancelled=true;" style="font-size:11px;padding:2px 8px;border:.5px solid var(--border2);border-radius:5px;background:var(--bg2);color:var(--text);cursor:pointer;">Cancel</button>';
+  progress.innerHTML = '<span id="gcal-progress-text">Importing Google Calendar events…</span>';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = 'font-size:11px;padding:2px 8px;border:.5px solid var(--border2);border-radius:5px;background:var(--bg2);color:var(--text);cursor:pointer;margin-left:12px;';
+  cancelBtn.onclick = () => { progress.remove(); window._gcalCancelled = true; };
+  progress.appendChild(cancelBtn);
   document.body.appendChild(progress);
   window._gcalCancelled = false;
 
