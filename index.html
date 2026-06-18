@@ -1017,13 +1017,11 @@ function renderSidebar(){saveToStorage();
   // Group calendars: "My Calendars" (no _gcalId) vs per-email Google groups
   const myCalendars = calendars.filter(c => !c._gcalId);
   const gcalEmails = {};
-  calendars.filter(c => c._gcalId && c._gcalEmail).forEach(c => {
-    if (!gcalEmails[c._gcalEmail]) gcalEmails[c._gcalEmail] = [];
-    gcalEmails[c._gcalEmail].push(c);
+  calendars.filter(c => c._gcalId).forEach(c => {
+    const key = c._gcalEmail || 'Google Calendar';
+    if (!gcalEmails[key]) gcalEmails[key] = [];
+    gcalEmails[key].push(c);
   });
-  // Calendars with _gcalId but no _gcalEmail go into a generic Google group
-  const gcalNoEmail = calendars.filter(c => c._gcalId && !c._gcalEmail);
-  if (gcalNoEmail.length) gcalEmails['Google Calendar'] = (gcalEmails['Google Calendar'] || []).concat(gcalNoEmail);
 
   function renderCalItem(c) {
     return `<div class="cal-item${c.visible?' visible':''}" id="item-${c.id}">
