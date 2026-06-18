@@ -1014,8 +1014,19 @@ function populateGroupSelect(selectedId){
 
 // ── Sidebar ──
 function renderSidebar(){saveToStorage();
-  document.getElementById('cal-list').innerHTML=calendars.map(c=>`
-    <div class="cal-item${c.visible?' visible':''}" id="item-${c.id}">
+  // Group calendars: "My Calendars" (no _gcalId) vs per-email Google groups
+  const myCalendars = calendars.filter(c => !c._gcalId);
+  const gcalEmails = {};
+  calendars.filter(c => c._gcalId && c._gcalEmail).forEach(c => {
+    if (!gcalEmails[c._gcalEmail]) gcalEmails[c._gcalEmail] = [];
+    gcalEmails[c._gcalEmail].push(c);
+  });
+  // Calendars with _gcalId but no _gcalEmail go into a generic Google group
+  const gcalNoEmail = calendars.filter(c => c._gcalId && !c._gcalEmail);
+  if (gcalNoEmail.length) gcalEmails['Google Calendar'] = (gcalEmails['Google Calendar'] || []).concat(gcalNoEmail);
+
+  function renderCalItem(c) {
+    return `<div class="cal-item${c.visible?' visible':''}" id="item-${c.id}">
       <div class="cal-item-row" onclick="toggleVis('${c.id}')">
         <div class="cal-dot" style="background:${c.color}"></div>
         <span class="cal-item-name">${c.name}</span>
@@ -1034,7 +1045,32 @@ function renderSidebar(){saveToStorage();
         <input type="text" id="rinput-${c.id}" value="${c.name}" maxlength="30" onkeydown="renameKey(event,'${c.id}')"/>
         <div class="rename-btns"><button onclick="cancelRename()">Cancel</button><button class="rename-save" onclick="saveRename('${c.id}')">Save</button></div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }
+
+  let html = '';
+
+  // My Calendars section
+  html += `<div class="cal-group-header">
+    <span class="cal-group-title">My Calendars</span>
+  </div>`;
+  html += myCalendars.map(renderCalItem).join('');
+
+  // Google Calendar sections per email
+  Object.entries(gcalEmails).forEach(([email, cals]) => {
+    const groupVisible = gcalGroupVisibility[email] !== false;
+    html += `<div class="cal-group-header">
+      <span class="cal-group-title">${email}</span>
+      <button class="cal-group-eye${groupVisible?'':' hidden-group'}" onclick="toggleGcalGroup('${email}')" title="${groupVisible?'Hide all':'Show all'}">
+        <i class="ti ti-eye${groupVisible?'':'-off'}"></i>
+      </button>
+    </div>`;
+    if (groupVisible) {
+      html += cals.map(renderCalItem).join('');
+    }
+  });
+
+  document.getElementById('cal-list').innerHTML = html;
   calendars.forEach(c=>{
     const r=document.getElementById('cp-'+c.id);
     if(!r)return;
@@ -1046,6 +1082,19 @@ function renderSidebar(){saveToStorage();
     r.innerHTML=html;
   });
   if(renamingId!==null){const i=document.getElementById('rinput-'+renamingId);if(i){i.focus();i.select();}}
+}
+function toggleGcalGroup(email) {
+  const currentlyVisible = gcalGroupVisibility[email] !== false;
+  gcalGroupVisibility[email] = !currentlyVisible;
+  // Toggle visibility of all calendars in this group
+  calendars.forEach(c => {
+    if ((c._gcalEmail === email) || (!c._gcalEmail && c._gcalId && email === 'Google Calendar')) {
+      c.visible = !currentlyVisible;
+      dbSaveCalendar(c);
+    }
+  });
+  renderSidebar();
+  render();
 }
 function toggleVis(id){if(openMenu===id||renamingId===id)return;const c=calendars.find(x=>x.id==id);if(c){c.visible=!c.visible;dbSaveCalendar(c);}renderSidebar();render();}
 function toggleMenu(e,id){e.stopPropagation();openMenu=openMenu===id?null:id;renamingId=null;renderSidebar();}
@@ -3721,7 +3770,7 @@ async function loadFromSupabase() {
       }
     }
     calendars = uniqueCals.map(c => ({
-      id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id, _gcalId: c.gcal_id
+      id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id, _gcalId: c.gcal_id, _gcalEmail: c.gcal_email
     }));
   } else {
     // First login — create default calendars
@@ -3803,7 +3852,7 @@ async function dbDeleteEvent(ev) {
 
 async function dbSaveCalendar(cal) {
   if (!_supaUser) { saveToStorage(); return; }
-  const row = { user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible, gcal_id: cal._gcalId || null };
+  const row = { user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible, gcal_id: cal._gcalId || null, gcal_email: cal._gcalEmail || null };
   if (cal._dbId) {
     await _supa.from('calendars').update(row).eq('id', cal._dbId);
   } else {
@@ -4032,6 +4081,7 @@ if (isMobile()) {
 const GCAL_CLIENT_ID = '873976523177-judvlo65vs7buq02g3et4d937r05ae18.apps.googleusercontent.com';
 const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
 let _gcalToken = null;
+let _gcalUserEmail = 'Google Calendar';
 
 function startGoogleCalendarSync() {
   // Use Google Identity Services token client
@@ -4044,6 +4094,14 @@ function startGoogleCalendarSync() {
         return;
       }
       _gcalToken = tokenResponse.access_token;
+      // Get user email
+      try {
+        const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: 'Bearer ' + _gcalToken }
+        });
+        const userInfo = await userRes.json();
+        _gcalUserEmail = userInfo.email || 'Google Calendar';
+      } catch(e) { _gcalUserEmail = 'Google Calendar'; }
       await fetchGoogleCalendars();
     }
   });
@@ -4146,7 +4204,8 @@ async function importSelectedGcals() {
         name: gcal.summary,
         color: gcal.backgroundColor || '#4285F4',
         visible: true,
-        _gcalId: calId
+        _gcalId: calId,
+        _gcalEmail: _gcalUserEmail || 'Google Calendar'
       };
       calendars.push(appCal);
       await dbSaveCalendar(appCal);
