@@ -666,7 +666,7 @@
   <!-- Sidebar -->
   <div class="sidebar">
     <div class="sidebar-header">
-      <span class="sidebar-title">My Calendars</span>
+      <span class="sidebar-title">Calendars</span>
       <button class="nav-btn" style="padding:5px 9px;font-size:14px;" onclick="toggleTheme()"><i class="ti ti-moon" id="theme-icon"></i></button>
     </div>
     <div id="cal-list"></div>
@@ -677,7 +677,7 @@
       <div class="ncf-swatches" id="ncf-swatches"></div>
       <div class="form-actions">
         <button onclick="cancelNewCal()">Cancel</button>
-        <button class="btn-create" onclick="confirmNewCal()">Create</button>
+        <button class="btn-create" type="button" onclick="confirmNewCal()">Create</button>
       </div>
     </div>
     <button class="btn-import" onclick="openImport()"><i class="ti ti-calendar-import"></i> Import .ics file</button>
@@ -1015,7 +1015,7 @@ function populateGroupSelect(selectedId){
 // ── Sidebar ──
 function renderSidebar(){saveToStorage();
   // Group calendars: "My Calendars" (no _gcalId) vs per-email Google groups
-  const myCalendars = calendars.filter(c => !c._gcalId);
+  const myCalendars = calendars.filter(c => !c._gcalId || c._gcalId === 'null' || c._gcalId === '');
   const gcalEmails = {};
   calendars.filter(c => c._gcalId).forEach(c => {
     const key = c._gcalEmail || 'Google Calendar';
@@ -3769,7 +3769,7 @@ async function loadFromSupabase() {
       }
     }
     calendars = uniqueCals.map(c => ({
-      id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id, _gcalId: c.gcal_id, _gcalEmail: c.gcal_email
+      id: c.id, name: c.name, color: c.color, visible: c.visible, _dbId: c.id, _gcalId: c.gcal_id || null, _gcalEmail: c.gcal_email || null
     }));
   } else {
     // First login — create default calendars
