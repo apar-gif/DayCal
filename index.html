@@ -935,6 +935,7 @@ function loadFromStorage() {
   } catch(e) { console.warn('localStorage load failed', e); return false; }
 }
 let nextId=3,openMenu=null,renamingId=null,deleteId=null,isDark=false;
+let gcalGroupVisibility = {};
 let events=[],parsedIcsEvents=[];
 
 // ── Tasks state ──
