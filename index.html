@@ -936,6 +936,7 @@ function loadFromStorage() {
 }
 let nextId=3,openMenu=null,renamingId=null,deleteId=null,isDark=false;
 let gcalGroupVisibility = {};
+let calGroupCollapsed = {}; // group key -> boolean (collapsed)
 let events=[],parsedIcsEvents=[];
 
 // ── Tasks state ──
@@ -1052,22 +1053,28 @@ function renderSidebar(){saveToStorage();
   let html = '';
 
   // My Calendars section
-  html += `<div class="cal-group-header">
+  const myCollapsed = calGroupCollapsed['__my__'];
+  html += `<div class="cal-group-header" onclick="toggleCalGroup('__my__')">
+    <i class="ti ti-chevron-down cal-group-arrow${myCollapsed?' collapsed':''}"></i>
     <span class="cal-group-title">My Calendars</span>
   </div>`;
-  html += myCalendars.map(renderCalItem).join('');
+  if (!myCollapsed) html += myCalendars.map(renderCalItem).join('');
 
   // Google Calendar sections per email
   Object.entries(gcalEmails).forEach(([email, cals], idx) => {
     const groupVisible = gcalGroupVisibility[email] !== false;
-    const safeEmail = btoa(encodeURIComponent(email)); // encode to avoid special chars in onclick
-    html += `<div class="cal-group-header">
-      <span class="cal-group-title">${email}</span>
-      <button class="cal-group-eye${groupVisible?'':' hidden-group'}" onclick="toggleGcalGroup(decodeURIComponent(atob('${safeEmail}')))" title="${groupVisible?'Hide all':'Show all'}">
+    const groupCollapsed = calGroupCollapsed[email];
+    const safeEmail = btoa(encodeURIComponent(email));
+    // Show email as title (truncated)
+    const displayEmail = email === 'Google Calendar' ? 'Google Calendar' : email;
+    html += `<div class="cal-group-header" onclick="toggleCalGroup('${safeEmail}',true)">
+      <i class="ti ti-chevron-down cal-group-arrow${groupCollapsed?' collapsed':''}"></i>
+      <span class="cal-group-title" title="${email}">${displayEmail}</span>
+      <button class="cal-group-eye${groupVisible?'':' hidden-group'}" onclick="event.stopPropagation();toggleGcalGroup(decodeURIComponent(atob('${safeEmail}')))" title="${groupVisible?'Hide all':'Show all'}">
         <i class="ti ti-eye${groupVisible?'':'-off'}"></i>
       </button>
     </div>`;
-    if (groupVisible) {
+    if (!groupCollapsed) {
       html += cals.map(renderCalItem).join('');
     }
   });
@@ -1085,6 +1092,12 @@ function renderSidebar(){saveToStorage();
   });
   if(renamingId!==null){const i=document.getElementById('rinput-'+renamingId);if(i){i.focus();i.select();}}
 }
+function toggleCalGroup(keyOrSafeEmail, isBase64) {
+  const key = isBase64 ? decodeURIComponent(atob(keyOrSafeEmail)) : keyOrSafeEmail;
+  calGroupCollapsed[key] = !calGroupCollapsed[key];
+  renderSidebar();
+}
+
 function toggleGcalGroup(email) {
   const currentlyVisible = gcalGroupVisibility[email] !== false;
   gcalGroupVisibility[email] = !currentlyVisible;
