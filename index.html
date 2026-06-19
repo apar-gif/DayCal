@@ -1055,11 +1055,12 @@ function renderSidebar(){saveToStorage();
   html += myCalendars.map(renderCalItem).join('');
 
   // Google Calendar sections per email
-  Object.entries(gcalEmails).forEach(([email, cals]) => {
+  Object.entries(gcalEmails).forEach(([email, cals], idx) => {
     const groupVisible = gcalGroupVisibility[email] !== false;
+    const safeEmail = btoa(encodeURIComponent(email)); // encode to avoid special chars in onclick
     html += `<div class="cal-group-header">
       <span class="cal-group-title">${email}</span>
-      <button class="cal-group-eye${groupVisible?'':' hidden-group'}" onclick="toggleGcalGroup('${email}')" title="${groupVisible?'Hide all':'Show all'}">
+      <button class="cal-group-eye${groupVisible?'':' hidden-group'}" onclick="toggleGcalGroup(decodeURIComponent(atob('${safeEmail}')))" title="${groupVisible?'Hide all':'Show all'}">
         <i class="ti ti-eye${groupVisible?'':'-off'}"></i>
       </button>
     </div>`;
@@ -1127,12 +1128,12 @@ function renderNcfSwatches(expanded){
 function pickNcfColor(c){selColor=c;renderNcfSwatches();}
 function toggleNewForm(){const f=document.getElementById('new-cal-form');f.classList.toggle('open');if(f.classList.contains('open')){document.getElementById('new-cal-name').value='';document.getElementById('new-cal-name').focus();selColor=COLORS[0];renderNcfSwatches();}}
 function cancelNewCal(){document.getElementById('new-cal-form').classList.remove('open');}
-function confirmNewCal(){
+async function confirmNewCal(){
   const n=document.getElementById('new-cal-name').value.trim();
   if(!n){document.getElementById('new-cal-name').focus();return;}
   const newCal = {id: Date.now(), name:n, color:selColor, visible:true};
   calendars.push(newCal);
-  dbSaveCalendar(newCal); // assigns _dbId and UUID id from Supabase
+  await dbSaveCalendar(newCal); // assigns _dbId and UUID id from Supabase
   renderSidebar();
   document.getElementById('new-cal-form').classList.remove('open');
 }
