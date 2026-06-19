@@ -1015,7 +1015,9 @@ function populateGroupSelect(selectedId){
 // ── Sidebar ──
 function renderSidebar(){saveToStorage();
   // Group calendars: "My Calendars" (no _gcalId) vs per-email Google groups
+  console.log('renderSidebar: calendars =', JSON.stringify(calendars.map(c => ({id:c.id, name:c.name, _gcalId:c._gcalId}))));
   const myCalendars = calendars.filter(c => !c._gcalId || c._gcalId === 'null' || c._gcalId === '');
+  console.log('myCalendars:', myCalendars.map(c => c.name));
   const gcalEmails = {};
   calendars.filter(c => c._gcalId).forEach(c => {
     const key = c._gcalEmail || 'Google Calendar';
@@ -1129,13 +1131,20 @@ function pickNcfColor(c){selColor=c;renderNcfSwatches();}
 function toggleNewForm(){const f=document.getElementById('new-cal-form');f.classList.toggle('open');if(f.classList.contains('open')){document.getElementById('new-cal-name').value='';document.getElementById('new-cal-name').focus();selColor=COLORS[0];renderNcfSwatches();}}
 function cancelNewCal(){document.getElementById('new-cal-form').classList.remove('open');}
 async function confirmNewCal(){
-  const n=document.getElementById('new-cal-name').value.trim();
-  if(!n){document.getElementById('new-cal-name').focus();return;}
-  const newCal = {id: Date.now(), name:n, color:selColor, visible:true};
-  calendars.push(newCal);
-  await dbSaveCalendar(newCal); // assigns _dbId and UUID id from Supabase
-  renderSidebar();
-  document.getElementById('new-cal-form').classList.remove('open');
+  try {
+    const n=document.getElementById('new-cal-name').value.trim();
+    if(!n){document.getElementById('new-cal-name').focus();return;}
+    const newCal = {id: Date.now(), name:n, color:selColor, visible:true};
+    calendars.push(newCal);
+    if (_supaUser) {
+      await dbSaveCalendar(newCal);
+    }
+    renderSidebar();
+    document.getElementById('new-cal-form').classList.remove('open');
+  } catch(e) {
+    console.error('confirmNewCal error:', e);
+    alert('Error creating calendar: ' + e.message);
+  }
 }
 
 // ── Tasks ──
