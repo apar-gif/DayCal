@@ -1269,7 +1269,7 @@ function openEditTask(id){
 }
 
 function closeAddTask(){editingTaskId=null;document.getElementById('add-task-overlay').classList.remove('open');}
-function saveTask(){
+async function saveTask(){
   const title=document.getElementById('atd-title').value.trim();
   if(!title)return;
   const estH=parseInt(document.getElementById('atd-est-hours').value)||0;
@@ -1278,21 +1278,26 @@ function saveTask(){
   const gVal=document.getElementById('atd-group').value;
   const groupId=gVal?parseInt(gVal):null;
   const data={title,notes:document.getElementById('atd-notes').value.trim(),due:document.getElementById('atd-due').value,priority:document.getElementById('atd-priority').value,estMins:estMins||0,groupId};
+  let savedTask;
   if(editingTaskId!==null){
     const t=tasks.find(x=>x.id===editingTaskId);
-    if(t)Object.assign(t,data);
+    if(t){Object.assign(t,data); savedTask=t;}
   } else {
-    tasks.push({id:taskNextId++,...data,done:false,scheduled:false,timeLeftMins:estMins||0});
+    savedTask = {id:taskNextId++,...data,done:false,scheduled:false,timeLeftMins:estMins||0};
+    tasks.push(savedTask);
   }
+  if (savedTask) await dbSaveTask(savedTask);
   closeAddTask();renderTasks();
 }
 
-function quickAddTask(e){
+async function quickAddTask(e){
   if(e.key!=='Enter')return;
   const inp=document.getElementById('quick-task-input');
   const title=inp.value.trim();if(!title)return;
-  tasks.push({id:taskNextId++,title,notes:'',due:'',priority:'none',done:false});
+  const newTask = {id:taskNextId++,title,notes:'',due:'',priority:'none',done:false,estMins:0,timeLeftMins:0};
+  tasks.push(newTask);
   inp.value='';renderTasks();
+  await dbSaveTask(newTask);
 }
 
 function toggleTask(id) {
@@ -1303,24 +1308,34 @@ function toggleTask(id) {
     const el = document.querySelector(`.task-item[data-task-id="${id}"]`);
     if (el) {
       el.classList.add('completing');
-      setTimeout(() => {
+      setTimeout(async () => {
         t.done = true;
         renderTasks();
+        await dbSaveTask(t);
       }, 600);
     } else {
       t.done = true;
       renderTasks();
+      dbSaveTask(t);
     }
   } else {
     // Un-completing — instant
     t.done = false;
     renderTasks();
+    dbSaveTask(t);
   }
 }
 
 function askDelTask(id){pendingDelTaskId=id;document.getElementById('del-task-overlay').classList.add('open');}
 function cancelDelTask(){pendingDelTaskId=null;document.getElementById('del-task-overlay').classList.remove('open');}
-function confirmDelTask(){tasks=tasks.filter(x=>x.id!==pendingDelTaskId);pendingDelTaskId=null;document.getElementById('del-task-overlay').classList.remove('open');renderTasks();}
+async function confirmDelTask(){
+  const t = tasks.find(x=>x.id===pendingDelTaskId);
+  if (t) await dbDeleteTask(t);
+  tasks=tasks.filter(x=>x.id!==pendingDelTaskId);
+  pendingDelTaskId=null;
+  document.getElementById('del-task-overlay').classList.remove('open');
+  renderTasks();
+}
 
 function setFilter(f,btn){taskFilter=f;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderTasks();}
 
@@ -1499,7 +1514,7 @@ function onGroupDragLeave(e){
   }
 }
 
-function onGroupDrop(e,groupId){
+async function onGroupDrop(e,groupId){
   e.preventDefault();
   const zone=e.currentTarget;
   zone.classList.remove('drag-over');
@@ -1513,6 +1528,7 @@ function onGroupDrop(e,groupId){
   }
   dragTaskId=null;
   renderTasks();
+  if (t) await dbSaveTask(t);
 }
 
 function formatEst(mins){
@@ -1844,6 +1860,11 @@ function stopTimer(){
   saveTimerProgress();
   updateTimerDisplay();
   renderTasks();
+  // Persist the saved progress to Supabase (only on stop, not every tick)
+  if (timerTaskId) {
+    const t = tasks.find(x => x.id === timerTaskId);
+    if (t) dbSaveTask(t);
+  }
 }
 
 function resetTimer(){
@@ -2056,6 +2077,13 @@ function ensureTaskFields() {
 
 // ── Toggle panel ──
 function toggleSchedPanel() {
+  // On mobile, redirect straight to the Schedule sub-tab inside the Timer tab
+  // instead of trying to slide open the (hidden on mobile) side panel.
+  if (typeof isMobile === 'function' && isMobile()) {
+    mobileTimerSubTab('sched');
+    return;
+  }
+
   schedPanelOpen = !schedPanelOpen;
   const panel = document.getElementById('sched-panel');
   const btn = document.getElementById('sched-toggle-btn');
@@ -2417,10 +2445,11 @@ function scheduleAuto(idx) {
 }
 
 // ─── Apply scheduling ───
-function applySchedule(actions) {
+async function applySchedule(actions) {
   const slot = schedSlots[schedSlotIndex];
   ensureTaskFields();
   let offset = 0;
+  const savePromises = [];
 
   actions.forEach(({ taskId, mins }) => {
     const t = tasks.find(x => x.id === taskId);
@@ -2440,6 +2469,7 @@ function applySchedule(actions) {
       _scheduled: true
     };
     events.push(newEv);
+    savePromises.push(dbSaveEvent(newEv));
     offset += mins;
 
     // Update task
@@ -2450,10 +2480,14 @@ function applySchedule(actions) {
     } else {
       t._partiallyScheduled = true;
     }
+    savePromises.push(dbSaveTask(t));
   });
 
   render();
   renderTasks();
+
+  // Save in background — don't block the UI on this
+  Promise.all(savePromises).catch(e => console.error('applySchedule save error:', e));
 
   // Load the first scheduled task into the timer and start it
   if (actions.length > 0) {
@@ -3338,7 +3372,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // CANCEL SCHEDULED BLOCK
 // ══════════════════════════════════════════════════════════════
 
-function cancelScheduledBlock(e, ds, evIdx) {
+async function cancelScheduledBlock(e, ds, evIdx) {
   e.stopPropagation();
   e.preventDefault();
 
@@ -3347,6 +3381,7 @@ function cancelScheduledBlock(e, ds, evIdx) {
   if (!ev || !ev._scheduled) return;
 
   // Just remove the calendar event — leave timeLeftMins as-is
+  await dbDeleteEvent(ev);
   const idx = events.indexOf(ev);
   if (idx >= 0) events.splice(idx, 1);
 
@@ -3355,6 +3390,7 @@ function cancelScheduledBlock(e, ds, evIdx) {
   if (task && task.scheduled) {
     task.scheduled = false;
     task._partiallyScheduled = true;
+    await dbSaveTask(task);
   }
 
   // Preserve scroll
@@ -4119,9 +4155,25 @@ function mobileNav(tab) {
   }
 }
 
-// Switch between Timer and Schedule sub-tabs inside the mobile Timer tab
+// Switch between Timer and Schedule sub-tabs inside the mobile Timer tab.
+// Always ensures the Timer main-tab itself is active first, so this can be
+// called directly (e.g. from the calendar's schedule button) without requiring
+// the user to already be on the Timer tab.
 function mobileTimerSubTab(which) {
   window._mobileTimerActiveSub = which;
+
+  // Make sure the Timer main-tab is the active one
+  document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mnav-timer')?.classList.add('active');
+  const calSection = document.querySelector('.cal-section');
+  const tasksSection = document.querySelector('.tasks-section');
+  const sidebar = document.querySelector('.sidebar');
+  if (calSection) calSection.style.display = 'none';
+  if (tasksSection) tasksSection.style.display = 'none';
+  if (sidebar) sidebar.classList.remove('mobile-open');
+  const mobileTimerPanel = document.getElementById('mobile-timer-panel');
+  if (mobileTimerPanel) mobileTimerPanel.classList.add('active');
+
   document.querySelectorAll('.mobile-subtab').forEach(b => b.classList.remove('active'));
   document.getElementById('msub-' + which)?.classList.add('active');
 
@@ -4156,6 +4208,9 @@ function mobileTimerSubTab(which) {
       schedSlots = computeWeekSlots();
       schedSlotIndex = 0;
       schedSelectedTaskId = null;
+      // Force a reflow before rendering so the freshly-appended panel
+      // has real dimensions (avoids any "blank until you switch tabs" glitches)
+      void schedPanel.offsetHeight;
       renderSchedPanel();
     }
   }
