@@ -488,10 +488,20 @@
      MOBILE RESPONSIVE (phones ≤ 768px)
   ══════════════════════════════════════════════════════════ */
   @media (max-width: 768px) {
-    body{padding:.5rem;}
+    body{padding:.5rem;overflow-x:hidden;}
+    html{overflow-x:hidden;}
 
     /* Stack layout vertically */
-    .app{flex-direction:column;gap:0;}
+    .app{flex-direction:column;gap:0;max-width:100vw;}
+
+    /* Popovers/dialogs — never exceed viewport width */
+    .new-ev-popover{width:calc(100vw - 24px)!important;max-width:340px;}
+    .settings-dialog{width:calc(100vw - 32px)!important;max-width:340px;}
+    .timer-complete-dialog{width:calc(100vw - 32px)!important;max-width:340px;}
+    #gcal-picker-overlay > div{width:calc(100vw - 32px)!important;max-width:340px;}
+
+    /* Prevent any element from forcing horizontal scroll */
+    .cal-section, .main, .tasks-section{max-width:100vw;box-sizing:border-box;}
 
     /* Hide sidebar — shown via bottom sheet instead */
     .sidebar{display:none;}
@@ -530,6 +540,18 @@
   @media (max-width: 768px) {
     body{padding-bottom:64px;}
     .mobile-nav{display:flex;}
+
+    /* Week view on mobile — tighter columns, smaller text to avoid forced horizontal scroll */
+    .week-col-header .wday{font-size:10px;}
+    .week-col-header .wdate{font-size:14px;}
+    .week-time-gutter{width:38px;}
+    .day-hour-label-col{left:-38px;width:38px;}
+    .week-hour-label{font-size:9px;}
+    .week-cols-wrap{margin-left:38px;}
+
+    /* Month view pills — smaller on mobile to fit narrow cells */
+    .event-pill{font-size:9px;padding:1px 4px;}
+    .cal-cell{min-height:56px;padding:4px 5px;}
   }
 
   /* Loading screen */
