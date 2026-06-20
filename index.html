@@ -4009,21 +4009,28 @@ async function dbSaveTask(task) {
     priority: task.priority || 'none',
     est_mins: task.estMins || 0,
     time_left_mins: task.timeLeftMins || 0,
-    group_id: task.groupId || null,
+    group_id: (task.groupId && typeof task.groupId === 'string' && task.groupId.includes('-')) ? task.groupId : null, // only send valid UUID group ids, drop legacy numeric ones
     done: task.done || false,
     scheduled: task.scheduled || false,
   };
-  if (task._dbId) {
-    await _supa.from('tasks').update(row).eq('id', task._dbId);
-  } else {
-    const { data } = await _supa.from('tasks').insert(row).select().single();
-    if (data) { task._dbId = data.id; task.id = data.id; }
+  try {
+    if (task._dbId) {
+      const { error } = await _supa.from('tasks').update(row).eq('id', task._dbId);
+      if (error) console.error('dbSaveTask UPDATE error:', error.message, error.details, row);
+    } else {
+      const { data, error } = await _supa.from('tasks').insert(row).select().single();
+      if (error) { console.error('dbSaveTask INSERT error:', error.message, error.details, row); return; }
+      if (data) { task._dbId = data.id; task.id = data.id; }
+    }
+  } catch (e) {
+    console.error('dbSaveTask exception:', e);
   }
 }
 
 async function dbDeleteTask(task) {
   if (!_supaUser || !task._dbId) return;
-  await _supa.from('tasks').delete().eq('id', task._dbId);
+  const { error } = await _supa.from('tasks').delete().eq('id', task._dbId);
+  if (error) console.error('dbDeleteTask error:', error.message);
 }
 
 async function dbSaveGroup(group) {
