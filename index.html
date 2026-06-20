@@ -46,6 +46,14 @@
   .cal-item:not(.visible) .cal-check{opacity:0;}
   .cal-edit-btn{font-size:13px;color:var(--text3);opacity:0;cursor:pointer;flex-shrink:0;padding:2px 4px;border-radius:4px;line-height:1;}
   .cal-item:hover .cal-edit-btn{opacity:1;}
+  .cal-group-header{display:flex;align-items:center;gap:4px;margin:12px 0 3px;padding:0 2px;cursor:pointer;user-select:none;}
+  .cal-group-header:hover .cal-group-title{color:var(--text2);}
+  .cal-group-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cal-group-arrow{font-size:11px;color:var(--text3);opacity:.6;transition:transform .2s;flex-shrink:0;}
+  .cal-group-arrow.collapsed{transform:rotate(-90deg);}
+  .cal-group-eye{background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px;border-radius:4px;font-size:13px;line-height:1;flex-shrink:0;}
+  .cal-group-eye:hover{color:var(--text);background:var(--bg2);}
+  .cal-group-eye.hidden-group{color:var(--text3);opacity:.5;}
   .cal-edit-btn:hover{background:var(--bg3);color:var(--text);}
   .edit-menu{display:none;position:absolute;left:100%;top:0;margin-left:4px;background:var(--bg);border:.5px solid var(--border2);border-radius:8px;z-index:300;min-width:155px;overflow:hidden;box-shadow:var(--sh);}
   .edit-menu.open{display:block;}
