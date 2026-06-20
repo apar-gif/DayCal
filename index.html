@@ -3858,7 +3858,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       const mnav = document.getElementById('mobile-nav');
       if (authOverlay) authOverlay.classList.add('hidden');
       if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = ''; appEl.style.opacity = ''; }
-      if (timerBlock) timerBlock.style.display = 'flex';
+      if (timerBlock) { timerBlock.style.display = 'flex'; timerBlock.style.visibility = 'visible'; }
       if (mnav) mnav.style.display = '';
       await loadFromSupabase();
       render(); renderSidebar(); renderTasks();
