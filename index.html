@@ -4189,6 +4189,10 @@ function mobileTimerSubTab(which) {
   const schedPanel = document.getElementById('sched-panel');
   if (!content) return;
 
+  // Always hide BOTH first, so only the active sub-tab's panel shows
+  if (timer) timer.style.display = 'none';
+  if (schedPanel) { schedPanel.style.display = 'none'; schedPanel.classList.remove('open'); }
+
   if (which === 'timer') {
     if (timer) {
       content.appendChild(timer);
@@ -4209,6 +4213,7 @@ function mobileTimerSubTab(which) {
   } else if (which === 'sched') {
     if (schedPanel) {
       content.appendChild(schedPanel);
+      schedPanel.style.display = 'flex';
       schedPanel.classList.add('open');
       schedPanelOpen = true;
       ensureTaskFields();
