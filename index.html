@@ -4222,8 +4222,9 @@ async function importSelectedGcals() {
     const gcal = gcals.find(c => c.id === calId);
     if (!gcal) continue;
 
-    // Find or create matching calendar in app
-    let appCal = calendars.find(c => c._gcalId === calId);
+    // Find or create matching calendar in app — match by BOTH gcalId AND the syncing account's email,
+    // since the same Google calendar id can exist across different accounts (e.g. shared/holiday calendars)
+    let appCal = calendars.find(c => c._gcalId === calId && c._gcalEmail === _gcalUserEmail);
     if (!appCal) {
       appCal = {
         id: Date.now() + Math.random(),
@@ -4234,6 +4235,10 @@ async function importSelectedGcals() {
         _gcalEmail: _gcalUserEmail || 'Google Calendar'
       };
       calendars.push(appCal);
+      await dbSaveCalendar(appCal);
+    } else if (appCal._gcalEmail !== _gcalUserEmail) {
+      // Existing calendar's email is stale — update it to the current syncing account
+      appCal._gcalEmail = _gcalUserEmail;
       await dbSaveCalendar(appCal);
     }
 
