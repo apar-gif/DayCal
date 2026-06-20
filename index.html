@@ -3860,9 +3860,11 @@ async function dbSaveEvent(ev) {
     gcal_calendar_id: ev._gcalCalendarId || null,
   };
   if (ev._dbId) {
-    await _supa.from('events').update(row).eq('id', ev._dbId);
+    const { error } = await _supa.from('events').update(row).eq('id', ev._dbId);
+    if (error) console.error('dbSaveEvent update error:', error.message, row);
   } else {
-    const { data } = await _supa.from('events').insert(row).select().single();
+    const { data, error } = await _supa.from('events').insert(row).select().single();
+    if (error) { console.error('dbSaveEvent insert error:', error.message, row); return; }
     if (data) ev._dbId = data.id;
   }
 }
@@ -3876,9 +3878,11 @@ async function dbSaveCalendar(cal) {
   if (!_supaUser) { saveToStorage(); return; }
   const row = { user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible, gcal_id: cal._gcalId || null, gcal_email: cal._gcalEmail || null };
   if (cal._dbId) {
-    await _supa.from('calendars').update(row).eq('id', cal._dbId);
+    const { error } = await _supa.from('calendars').update(row).eq('id', cal._dbId);
+    if (error) console.error('dbSaveCalendar update error:', error.message, row);
   } else {
-    const { data } = await _supa.from('calendars').insert(row).select().single();
+    const { data, error } = await _supa.from('calendars').insert(row).select().single();
+    if (error) { console.error('dbSaveCalendar insert error:', error.message, row); return; }
     if (data) { cal._dbId = data.id; cal.id = data.id; }
   }
 }
@@ -4101,7 +4105,7 @@ if (isMobile()) {
 // ══════════════════════════════════════════════════════════════
 
 const GCAL_CLIENT_ID = '873976523177-judvlo65vs7buq02g3et4d937r05ae18.apps.googleusercontent.com';
-const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
+const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email';
 let _gcalToken = null;
 let _gcalUserEmail = 'Google Calendar';
 
@@ -4127,7 +4131,7 @@ function startGoogleCalendarSync() {
       await fetchGoogleCalendars();
     }
   });
-  tokenClient.requestAccessToken();
+  tokenClient.requestAccessToken({ prompt: 'select_account' }); // always show account picker, never silently reuse last session
 }
 
 async function fetchGoogleCalendars() {
