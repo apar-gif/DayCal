@@ -576,6 +576,15 @@
     .cal-header{gap:4px;}
     .btn-view{padding:6px 8px!important;font-size:12px;}
     .btn-view span{display:none;} /* hide "Month"/"Week" text label, keep icon + chevron only */
+
+    /* Sub-tabs inside the mobile Timer tab: Timer | Schedule */
+    .mobile-subtabs{display:flex;gap:6px;padding:10px 14px 0;flex-shrink:0;}
+    .mobile-subtab{flex:1;text-align:center;padding:8px 0;font-size:13px;font-weight:500;color:var(--text2);background:var(--bg2);border:.5px solid var(--border2);border-radius:8px;cursor:pointer;}
+    .mobile-subtab.active{background:var(--accent-bg);color:var(--accent-text);border-color:var(--accent);}
+
+    /* Schedule panel becomes a normal block inside the mobile timer tab (overriding the desktop display:none) */
+    .mobile-timer-panel .sched-panel{display:flex!important;width:100%!important;margin-left:0!important;border:none!important;border-radius:0!important;flex:1;overflow-y:auto;}
+    .mobile-timer-panel .sched-panel-inner{width:100%!important;}
   }
 
   /* Loading screen */
@@ -4095,11 +4104,27 @@ function mobileNav(tab) {
     // Show sidebar fullscreen with no close button — consistent with tab layout
     if (sidebar) sidebar.classList.add('mobile-open');
   } else if (tab === 'timer') {
-    if (mobileTimerPanel && timer) {
+    if (mobileTimerPanel) {
       mobileTimerPanel.classList.add('active');
-      if (!mobileTimerPanel.contains(timer)) {
-        mobileTimerPanel.appendChild(timer);
-      }
+      mobileTimerSubTab(window._mobileTimerActiveSub || 'timer');
+    }
+  }
+}
+
+// Switch between Timer and Schedule sub-tabs inside the mobile Timer tab
+function mobileTimerSubTab(which) {
+  window._mobileTimerActiveSub = which;
+  document.querySelectorAll('.mobile-subtab').forEach(b => b.classList.remove('active'));
+  document.getElementById('msub-' + which)?.classList.add('active');
+
+  const content = document.getElementById('mobile-timer-content');
+  const timer = document.getElementById('timer-block');
+  const schedPanel = document.getElementById('sched-panel');
+  if (!content) return;
+
+  if (which === 'timer') {
+    if (timer) {
+      content.appendChild(timer);
       timer.style.display = 'flex';
       timer.style.position = 'relative';
       timer.style.left = '';
@@ -4113,6 +4138,16 @@ function mobileNav(tab) {
       timer.style.border = '';
       timer.style.borderRadius = '';
       timer.style.visibility = 'visible';
+    }
+  } else if (which === 'sched') {
+    if (schedPanel) {
+      content.appendChild(schedPanel);
+      schedPanel.classList.add('open');
+      if (typeof schedPanelOpen !== 'undefined') schedPanelOpen = true;
+      if (typeof computeWeekSlots === 'function' && typeof renderSchedPanel === 'function') {
+        schedSlots = computeWeekSlots();
+        renderSchedPanel();
+      }
     }
   }
 }
@@ -4129,6 +4164,14 @@ window.addEventListener('resize', () => {
     if (tasksSection) tasksSection.style.display = '';
     if (sidebar) sidebar.classList.remove('mobile-open');
     if (mobileTimerPanel) mobileTimerPanel.classList.remove('active');
+
+    // Move schedule panel back to its original spot (right after sched-panel's normal home, inside .app)
+    const schedPanel = document.getElementById('sched-panel');
+    const appEl = document.getElementById('app');
+    if (schedPanel && appEl && schedPanel.parentElement !== appEl) {
+      appEl.appendChild(schedPanel);
+    }
+
     // Move timer back to body and restore desktop styles
     if (timer) {
       if (!document.body.contains(timer) || timer.parentElement !== document.body) {
@@ -4551,7 +4594,11 @@ async function importSelectedGcals() {
 
 <!-- Mobile timer panel -->
 <div class="mobile-timer-panel" id="mobile-timer-panel">
-  <!-- Timer content will be cloned here on mobile -->
+  <div class="mobile-subtabs">
+    <button class="mobile-subtab active" id="msub-timer" onclick="mobileTimerSubTab('timer')">Timer</button>
+    <button class="mobile-subtab" id="msub-sched" onclick="mobileTimerSubTab('sched')">Schedule</button>
+  </div>
+  <div id="mobile-timer-content" style="flex:1;display:flex;flex-direction:column;overflow-y:auto;"></div>
 </div>
 
 <!-- Mobile bottom nav -->
