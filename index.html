@@ -585,6 +585,14 @@
     /* Schedule panel becomes a normal block inside the mobile timer tab (overriding the desktop display:none) */
     .mobile-timer-panel .sched-panel{display:flex!important;width:100%!important;margin-left:0!important;border:none!important;border-radius:0!important;flex:1;overflow-y:auto;}
     .mobile-timer-panel .sched-panel-inner{width:100%!important;}
+
+    /* Tasks header — stack into two rows so nothing gets clipped */
+    #tasks-header-row1{flex-direction:column;align-items:stretch;gap:10px;padding:12px 14px;}
+    .tasks-header-actions{flex-wrap:wrap;justify-content:space-between;gap:8px!important;}
+    .tasks-filter{flex:1;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    .tasks-filter .filter-btn{white-space:nowrap;}
+    .tasks-header-actions .nav-btn{flex-shrink:0;font-size:12px!important;padding:5px 8px!important;}
+    .tasks-header-actions .nav-btn span{display:none;}
   }
 
   /* Loading screen */
@@ -789,13 +797,13 @@
 
     <!-- Tasks -->
     <div class="tasks-section">
-      <div class="tasks-header">
+      <div class="tasks-header" id="tasks-header-row1">
         <div class="tasks-header-left">
           <i class="ti ti-checkbox" style="font-size:18px;color:var(--accent);"></i>
           <span class="tasks-header-title">Tasks</span>
           <span class="tasks-count" id="tasks-count">0</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div class="tasks-header-actions" style="display:flex;align-items:center;gap:8px;">
           <div class="tasks-filter">
             <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
             <button class="filter-btn" onclick="setFilter('today',this)">Today</button>
@@ -4143,11 +4151,12 @@ function mobileTimerSubTab(which) {
     if (schedPanel) {
       content.appendChild(schedPanel);
       schedPanel.classList.add('open');
-      if (typeof schedPanelOpen !== 'undefined') schedPanelOpen = true;
-      if (typeof computeWeekSlots === 'function' && typeof renderSchedPanel === 'function') {
-        schedSlots = computeWeekSlots();
-        renderSchedPanel();
-      }
+      schedPanelOpen = true;
+      ensureTaskFields();
+      schedSlots = computeWeekSlots();
+      schedSlotIndex = 0;
+      schedSelectedTaskId = null;
+      renderSchedPanel();
     }
   }
 }
