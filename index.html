@@ -282,6 +282,15 @@
   /* ── Scheduling Panel ── */
   .sched-panel{width:0;flex-shrink:0;overflow:hidden;transition:width .25s ease;border-radius:10px;background:var(--bg);border:.5px solid var(--border);margin-left:0;display:flex;flex-direction:column;align-self:stretch;}
   .sched-panel.open{width:300px;margin-left:16px;}
+  #sched-timer-dock{flex-shrink:0;}
+  #sched-timer-dock #timer-block.docked{
+    position:relative!important;left:auto!important;bottom:auto!important;top:auto!important;
+    width:100%!important;box-shadow:none!important;border:none!important;
+    border-bottom:.5px solid var(--border)!important;border-radius:0!important;
+    height:auto!important;min-height:0!important;max-height:none!important;
+  }
+  #sched-timer-dock #timer-block.docked #timer-resize-handle{display:none;}
+  #sched-timer-dock #timer-block.docked #timer-drag-handle{cursor:default;}
   .sched-panel-inner{width:300px;display:flex;flex-direction:column;height:100%;overflow:hidden;}
   .sched-header{display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border-bottom:.5px solid var(--border);flex-shrink:0;}
   .sched-header-title{font-size:14px;font-weight:500;color:var(--text);display:flex;align-items:center;gap:8px;}
@@ -825,9 +834,10 @@
 
   </div>
 
-  <!-- Scheduling Panel -->
+  <!-- Scheduling Panel (Timer docks at the top of this same column when open) -->
   <div class="sched-panel" id="sched-panel">
     <div class="sched-panel-inner">
+      <div id="sched-timer-dock"></div>
       <div class="sched-header">
         <div class="sched-header-title"><i class="ti ti-calendar-time" style="font-size:16px;color:var(--accent);"></i> Schedule</div>
         <button class="nav-btn" style="padding:5px 9px;font-size:13px;" onclick="toggleSchedPanel()"><i class="ti ti-x"></i></button>
@@ -2087,6 +2097,9 @@ function toggleSchedPanel() {
   schedPanelOpen = !schedPanelOpen;
   const panel = document.getElementById('sched-panel');
   const btn = document.getElementById('sched-toggle-btn');
+  const timer = document.getElementById('timer-block');
+  const dock = document.getElementById('sched-timer-dock');
+
   if (schedPanelOpen) {
     panel.classList.add('open');
     if (btn) { btn.style.background = 'var(--accent-bg)'; btn.style.color = 'var(--accent-text)'; btn.style.borderColor = 'var(--accent)'; }
@@ -2095,9 +2108,21 @@ function toggleSchedPanel() {
     schedSlotIndex = 0;
     schedSelectedTaskId = null;
     renderSchedPanel();
+
+    // Dock the timer into the schedule panel (desktop only)
+    if (timer && dock && timer.style.display !== 'none') {
+      dock.appendChild(timer);
+      timer.classList.add('docked');
+    }
   } else {
     panel.classList.remove('open');
     if (btn) { btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
+
+    // Undock the timer back to its floating position
+    if (timer && timer.classList.contains('docked')) {
+      timer.classList.remove('docked');
+      document.body.appendChild(timer);
+    }
   }
 }
 
