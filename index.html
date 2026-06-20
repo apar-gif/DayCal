@@ -281,13 +281,15 @@
 
   /* ── Scheduling Panel ── */
   .sched-panel{width:0;flex-shrink:0;overflow:hidden;transition:width .25s ease;border-radius:10px;background:var(--bg);border:.5px solid var(--border);margin-left:0;display:flex;flex-direction:column;align-self:stretch;}
-  .sched-panel.open{width:300px;margin-left:16px;}
+  .sched-panel.open{width:300px;margin-left:16px;overflow:visible;}
+  .sched-panel.open .sched-panel-inner{overflow:visible;}
   #sched-timer-dock{flex-shrink:0;}
   #sched-timer-dock #timer-block.docked{
     position:relative!important;left:auto!important;bottom:auto!important;top:auto!important;
     width:100%!important;box-shadow:none!important;border:none!important;
     border-bottom:.5px solid var(--border)!important;border-radius:0!important;
     height:auto!important;min-height:0!important;max-height:none!important;
+    overflow:visible!important;
   }
   #sched-timer-dock #timer-block.docked #timer-resize-handle{display:none;}
   #sched-timer-dock #timer-block.docked #timer-drag-handle{cursor:default;}
