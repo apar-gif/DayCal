@@ -1394,9 +1394,9 @@ function renderTasks(){saveToStorage();
         <button class="task-action-btn danger" onclick="askDelTask('${t.id}')" title="Delete"><i class="ti ti-trash"></i></button>
       </div>
       <div class="time-popover" id="tp-${t.id}">
-        <input type="number" id="tp-h-${t.id}" min="0" max="99" placeholder="0" value="${t.estMins?Math.floor(t.estMins/60):''}" onkeydown="timePopoverKey(event,${t.id})"/>
+        <input type="number" id="tp-h-${t.id}" min="0" max="99" placeholder="0" value="${t.estMins?Math.floor(t.estMins/60):''}" onkeydown="timePopoverKey(event,'${t.id}')"/>
         <span>hr</span>
-        <input type="number" id="tp-m-${t.id}" min="0" max="59" placeholder="0" value="${t.estMins?t.estMins%60:''}" onkeydown="timePopoverKey(event,${t.id})"/>
+        <input type="number" id="tp-m-${t.id}" min="0" max="59" placeholder="0" value="${t.estMins?t.estMins%60:''}" onkeydown="timePopoverKey(event,'${t.id}')"/>
         <span>min</span>
         <button class="time-popover-save" onclick="saveTimePopover('${t.id}')">Save</button>
       </div>
@@ -1474,13 +1474,21 @@ function closeAllTimePopovers(){
   }
 }
 
-function saveTimePopover(id){
+async function saveTimePopover(id){
   const h=parseInt(document.getElementById('tp-h-'+id).value)||0;
   const m=parseInt(document.getElementById('tp-m-'+id).value)||0;
   const t=tasks.find(x=>x.id==id);
-  if(t)t.estMins=h*60+m;
+  if(t){
+    t.estMins=h*60+m;
+    // Keep timeLeftMins in sync if the task hasn't been partially worked on yet
+    if(t.timeLeftMins==null || t.timeLeftMins===t.estMins || !t._partiallyScheduled){
+      t.timeLeftMins=t.estMins;
+    }
+    await dbSaveTask(t);
+  }
   closeAllTimePopovers();
   renderTasks();
+  if (typeof populateTimerSelect === 'function') populateTimerSelect();
 }
 
 function timePopoverKey(e,id){
@@ -2276,7 +2284,7 @@ function renderManualTab(body) {
       <div class="sched-task-inp-row">
         <input class="sched-task-inp" id="sched-inp-${t.id}" type="number" min="5" max="${slot.durMins}"
           value="${Math.min(timeLeft, slot.durMins)}"
-          oninput="validateSchedInp(${t.id}, ${slot.durMins})" />
+          oninput="validateSchedInp('${t.id}', ${slot.durMins})" />
         <span style="font-size:11px;color:var(--text2);">min</span>
         <button class="sched-btn" id="sched-do-btn-${t.id}" onclick="scheduleManual('${t.id}', ${slot.durMins})">Schedule</button>
       </div>
