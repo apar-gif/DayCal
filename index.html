@@ -2487,7 +2487,7 @@ async function applySchedule(actions) {
   const savePromises = [];
 
   actions.forEach(({ taskId, mins }) => {
-    const t = tasks.find(x => x.id === taskId);
+    const t = tasks.find(x => x.id == taskId);
     if (!t) return;
 
     // Create calendar event
@@ -2527,7 +2527,7 @@ async function applySchedule(actions) {
   // Load the first scheduled task into the timer and start it
   if (actions.length > 0) {
     const firstAction = actions[0];
-    const timerTask = tasks.find(x => x.id === firstAction.taskId);
+    const timerTask = tasks.find(x => x.id == firstAction.taskId);
     if (timerTask) {
       // Stop any running timer first
       if (timerRunning) stopTimer();
@@ -2628,7 +2628,7 @@ let _nepDate = '';
 let _nepCalId = null;
 
 function _nepBestCal() {
-  return _nepCalId ? parseInt(_nepCalId) : ((calendars.find(c => c.visible) || calendars[0])?.id || 1);
+  return _nepCalId ? _nepCalId : ((calendars.find(c => c.visible) || calendars[0])?.id || 1); // calendar ids are UUID strings — don't parseInt
 }
 
 function _minsToTimeStr(m) {
@@ -2675,7 +2675,7 @@ function nepPickCal(id) {
 function nepPickCalSelect() {
   const sel = document.getElementById('nep-cal-select');
   if (sel && sel.selectedOptions[0]) {
-    _nepCalId = parseInt(sel.selectedOptions[0].dataset.calid);
+    _nepCalId = sel.selectedOptions[0].dataset.calid; // calendar ids are UUID strings now — don't parseInt
   }
 }
 
@@ -3331,7 +3331,7 @@ function openEditEvPopover(e, ds, evIdx) {
   document.getElementById('nep-location').value = ev.location || '';
   document.getElementById('nep-meet').value     = ev.meet || '';
   _nepDate  = ev.date;
-  _nepCalId = parseInt(ev.calId);
+  _nepCalId = ev.calId; // calendar ids are UUID strings — don't parseInt
 
   // Recurrence — just mark as none for editing (full recurrence edit is complex)
   document.getElementById('nep-recur').value = 'none';
@@ -3340,7 +3340,7 @@ function openEditEvPopover(e, ds, evIdx) {
   document.getElementById('nep-end-date').style.display = 'none';
   document.getElementById('nep-end-after-wrap').style.display = 'none';
 
-  _renderNepCals(parseInt(ev.calId)); // pre-select event's calendar
+  _renderNepCals(ev.calId); // pre-select event's calendar (UUID string)
 
   const pop = document.getElementById('new-ev-popover');
   pop.classList.add('open');
