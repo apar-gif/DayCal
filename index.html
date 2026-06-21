@@ -4282,21 +4282,10 @@ window.addEventListener('resize', () => {
       appEl.appendChild(schedPanel);
     }
 
-    // Move timer back to body and restore desktop styles
-    if (timer) {
-      if (!document.body.contains(timer) || timer.parentElement !== document.body) {
-        document.body.appendChild(timer);
-      }
-      timer.style.display = 'flex';
-      timer.style.position = 'fixed';
-      timer.style.left = '16px';
-      timer.style.bottom = '24px';
-      timer.style.transform = '';
-      timer.style.width = '220px';
-      timer.style.maxWidth = '';
-      timer.style.height = '200px';
-      timer.style.boxShadow = '0 4px 20px rgba(0,0,0,.1)';
-      timer.style.borderRadius = '10px';
+    // No floating timer anymore — leave it wherever it is (docked in schedule panel, or hidden)
+    // Only ensure it's hidden if the schedule panel isn't currently open
+    if (timer && !schedPanelOpen) {
+      timer.style.display = 'none';
     }
   }
 });
