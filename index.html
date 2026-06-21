@@ -1055,7 +1055,7 @@ function toggleTheme(){isDark=!isDark;document.body.classList.toggle('dark',isDa
 // ── Group functions ──
 function openGroupModal(id){
   editingGroupId=id||null;
-  const g=id?groups.find(x=>x.id===id):null;
+  const g=id?groups.find(x=>x.id==id):null;
   document.getElementById('group-modal-title').textContent=g?'Rename group':'New group';
   document.getElementById('group-save-btn').textContent=g?'Save':'Create group';
   document.getElementById('group-name-input').value=g?g.name:'';
@@ -1068,7 +1068,7 @@ async function saveGroup(){
   if(!name)return;
   let g;
   if(editingGroupId!==null){
-    g=groups.find(x=>x.id===editingGroupId);
+    g=groups.find(x=>x.id==editingGroupId);
     if(g)g.name=name;
   } else {
     g={id:groupNextId++,name};
@@ -1079,16 +1079,16 @@ async function saveGroup(){
 }
 function askDelGroup(id){
   pendingDelGroupId=id;
-  const g=groups.find(x=>x.id===id);
+  const g=groups.find(x=>x.id==id);
   document.getElementById('del-group-msg').textContent=`"${g.name}" will be deleted. Tasks inside will become ungrouped.`;
   document.getElementById('del-group-overlay').classList.add('open');
 }
 function cancelDelGroup(){pendingDelGroupId=null;document.getElementById('del-group-overlay').classList.remove('open');}
 async function confirmDelGroup(){
-  const g = groups.find(x=>x.id===pendingDelGroupId);
-  const affectedTasks = tasks.filter(t=>t.groupId===pendingDelGroupId);
-  tasks.forEach(t=>{if(t.groupId===pendingDelGroupId)t.groupId=null;});
-  groups=groups.filter(x=>x.id!==pendingDelGroupId);
+  const g = groups.find(x=>x.id==pendingDelGroupId);
+  const affectedTasks = tasks.filter(t=>t.groupId==pendingDelGroupId);
+  tasks.forEach(t=>{if(t.groupId==pendingDelGroupId)t.groupId=null;});
+  groups=groups.filter(x=>x.id!=pendingDelGroupId);
   pendingDelGroupId=null;
   document.getElementById('del-group-overlay').classList.remove('open');
   renderTasks();
@@ -1101,7 +1101,7 @@ function toggleGroupCollapse(id){
 }
 function populateGroupSelect(selectedId){
   const sel=document.getElementById('atd-group');
-  sel.innerHTML=`<option value="">No group</option>`+groups.map(g=>`<option value="${g.id}"${g.id===selectedId?' selected':''}>${g.name}</option>`).join('');
+  sel.innerHTML=`<option value="">No group</option>`+groups.map(g=>`<option value="${g.id}"${g.id==selectedId?' selected':''}>${g.name}</option>`).join('');
 }
 
 // ── Sidebar ──
@@ -1293,7 +1293,7 @@ async function saveTask(){
   const estM=parseInt(document.getElementById('atd-est-mins').value)||0;
   const estMins=estH*60+estM;
   const gVal=document.getElementById('atd-group').value;
-  const groupId=gVal?parseInt(gVal):null;
+  const groupId=gVal?(gVal.includes('-')?gVal:parseInt(gVal)):null; // group ids may be UUID strings (synced) or legacy numbers (local-only)
   const data={title,notes:document.getElementById('atd-notes').value.trim(),due:document.getElementById('atd-due').value,priority:document.getElementById('atd-priority').value,estMins:estMins||0,groupId};
   let savedTask;
   if(editingTaskId!==null){
@@ -1412,16 +1412,16 @@ function renderTasks(){saveToStorage();
 
   // Render each group
   groups.forEach(g=>{
-    const gtasks=ft.filter(t=>t.groupId===g.id);
+    const gtasks=ft.filter(t=>t.groupId==g.id);
     const collapsed=collapsedGroups.has(g.id);
     html+=`<div class="task-group${collapsed?' collapsed':''}" id="tg-${g.id}">
-      <div class="task-group-header" onclick="toggleGroupCollapse(${g.id})">
+      <div class="task-group-header" onclick="toggleGroupCollapse('${g.id}')">
         <i class="ti ti-chevron-down tg-chevron"></i>
         <span class="tg-name">${esc(g.name)}</span>
         <span class="tg-count">${gtasks.filter(t=>!t.done).length}</span>
         <div class="task-group-actions" onclick="event.stopPropagation()">
-          <button class="tg-btn" onclick="openGroupModal(${g.id})" title="Rename"><i class="ti ti-pencil"></i></button>
-          <button class="tg-btn danger" onclick="askDelGroup(${g.id})" title="Delete group"><i class="ti ti-trash"></i></button>
+          <button class="tg-btn" onclick="openGroupModal('${g.id}')" title="Rename"><i class="ti ti-pencil"></i></button>
+          <button class="tg-btn danger" onclick="askDelGroup('${g.id}')" title="Delete group"><i class="ti ti-trash"></i></button>
         </div>
       </div>
       <div class="task-group-body" data-group-id="${g.id}"
