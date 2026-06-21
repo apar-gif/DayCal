@@ -1100,9 +1100,7 @@ function populateGroupSelect(selectedId){
 // ── Sidebar ──
 function renderSidebar(){saveToStorage();
   // Group calendars: "My Calendars" (no _gcalId) vs per-email Google groups
-  console.log('renderSidebar: calendars =', JSON.stringify(calendars.map(c => ({id:c.id, name:c.name, _gcalId:c._gcalId}))));
   const myCalendars = calendars.filter(c => !c._gcalId || c._gcalId === 'null' || c._gcalId === '');
-  console.log('myCalendars:', myCalendars.map(c => c.name));
   const gcalEmails = {};
   calendars.filter(c => c._gcalId).forEach(c => {
     const key = c._gcalEmail || 'Google Calendar';
@@ -1640,16 +1638,7 @@ function confirmImport(){
 }
 
 // ── Calendar helpers ──
-function eventsForDate(ds){
-  const result = events.filter(e=>{const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
-  if (events.length > 0 && window._evDebugLogged !== true) {
-    window._evDebugLogged = true;
-    console.log('[DEBUG] Total events in memory:', events.length);
-    console.log('[DEBUG] Sample events:', JSON.stringify(events.slice(0,5).map(e=>({title:e.title,date:e.date,calId:e.calId}))));
-    console.log('[DEBUG] Calendar visibility:', JSON.stringify(calendars.map(c=>({id:c.id,name:c.name,visible:c.visible}))));
-  }
-  return result;
-}
+function eventsForDate(ds){return events.filter(e=>{const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));}
 function dateStr(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
 function calColor(calId){const c=calendars.find(x=>x.id==calId);return c?c.color:'#888';}
 
@@ -4431,7 +4420,7 @@ async function importSelectedGcals() {
   window._gcalCancelled = false;
 
   const now = new Date();
-  const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()).toISOString();
+  const oneYearAgo = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate()).toISOString(); // 2 months back is plenty for past reference
   const oneYearAhead = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()).toISOString();
 
   let totalImported = 0;
@@ -4466,57 +4455,70 @@ async function importSelectedGcals() {
       const progressText = document.getElementById('gcal-progress-text');
       if (progressText) progressText.textContent = `Importing ${gcal.summary}…`;
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
-      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events?timeMin=${oneYearAgo}&timeMax=${oneYearAhead}&singleEvents=true&orderBy=startTime&maxResults=500`;
-      const res = await fetch(url, {
-        headers: { Authorization: 'Bearer ' + _gcalToken },
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-      const data = await res.json();
-      if (data.error) { console.warn('GCal API error:', data.error.message); continue; }
-      if (!data.items) continue;
+      // Paginate through ALL results in range using nextPageToken — don't stop at one page
+      let pageToken = null;
+      let pageCount = 0;
+      do {
+        if (window._gcalCancelled) break;
+        pageCount++;
+        if (progressText && pageCount > 1) progressText.textContent = `Importing ${gcal.summary}… (page ${pageCount})`;
 
-      for (const item of data.items) {
-        if (item.status === 'cancelled') continue;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout per page
+        let url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calId)}/events?timeMin=${oneYearAgo}&timeMax=${oneYearAhead}&singleEvents=true&orderBy=startTime&maxResults=2500`;
+        if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
 
-        // Parse date/time
-        let date, startTime, endTime, allDay = false;
-        if (item.start.date) {
-          // All day event
-          date = item.start.date;
-          allDay = true;
-        } else if (item.start.dateTime) {
-          const start = new Date(item.start.dateTime);
-          const end = new Date(item.end.dateTime);
-          date = start.toISOString().slice(0, 10);
-          startTime = String(start.getHours()).padStart(2,'0') + ':' + String(start.getMinutes()).padStart(2,'0');
-          endTime = String(end.getHours()).padStart(2,'0') + ':' + String(end.getMinutes()).padStart(2,'0');
+        const res = await fetch(url, {
+          headers: { Authorization: 'Bearer ' + _gcalToken },
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
+        const data = await res.json();
+        if (data.error) { console.warn('GCal API error:', data.error.message); break; }
+        if (!data.items) break;
+
+        for (const item of data.items) {
+          if (item.status === 'cancelled') continue;
+
+          // Parse date/time
+          let date, startTime, endTime, allDay = false;
+          if (item.start.date) {
+            // All day event
+            date = item.start.date;
+            allDay = true;
+          } else if (item.start.dateTime) {
+            const start = new Date(item.start.dateTime);
+            const end = new Date(item.end.dateTime);
+            date = start.toISOString().slice(0, 10);
+            startTime = String(start.getHours()).padStart(2,'0') + ':' + String(start.getMinutes()).padStart(2,'0');
+            endTime = String(end.getHours()).padStart(2,'0') + ':' + String(end.getMinutes()).padStart(2,'0');
+          }
+
+          if (!date) continue;
+
+          // Skip duplicates
+          const exists = events.find(e => e._gcalEventId === item.id);
+          if (exists) continue;
+
+          const newEv = {
+            calId: appCal.id,
+            title: item.summary || '(No title)',
+            date,
+            startTime: startTime || null,
+            endTime: endTime || null,
+            allDay,
+            location: item.location || null,
+            meet: item.hangoutLink || null,
+            _gcalEventId: item.id,
+            _gcalCalendarId: calId
+          };
+          events.push(newEv);
+          await dbSaveEvent(newEv);
+          totalImported++;
         }
 
-        if (!date) continue;
-
-        // Skip duplicates
-        const exists = events.find(e => e._gcalEventId === item.id);
-        if (exists) continue;
-
-        const newEv = {
-          calId: appCal.id,
-          title: item.summary || '(No title)',
-          date,
-          startTime: startTime || null,
-          endTime: endTime || null,
-          allDay,
-          location: item.location || null,
-          meet: item.hangoutLink || null,
-          _gcalEventId: item.id,
-          _gcalCalendarId: calId
-        };
-        events.push(newEv);
-        await dbSaveEvent(newEv);
-        totalImported++;
-      }
+        pageToken = data.nextPageToken || null;
+      } while (pageToken);
     } catch(e) {
       console.warn('Error importing calendar', calId, e);
     }
