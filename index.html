@@ -1547,7 +1547,7 @@ async function onGroupDrop(e,groupId){
   if(!id)return;
   const t=tasks.find(x=>x.id==id);
   if(t){
-    t.groupId=(groupId===null||groupId==='null')?null:parseInt(groupId); // group ids are still local numeric ids (not yet synced as UUIDs)
+    t.groupId=(groupId===null||groupId==='null')?null:groupId; // group ids may be UUID strings (synced) or legacy numbers — don't parseInt, it would corrupt UUIDs
     // Auto-expand group if collapsed
     if(t.groupId&&collapsedGroups.has(t.groupId))collapsedGroups.delete(t.groupId);
   }
