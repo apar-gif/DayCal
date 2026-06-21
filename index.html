@@ -856,7 +856,7 @@
 </div>
 
 <!-- Draggable + resizable timer panel -->
-<div id="timer-block" style="position:fixed;left:16px;bottom:24px;width:220px;height:200px;min-height:140px;max-height:480px;background:var(--bg);border:.5px solid var(--border);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.1);display:none;flex-direction:column;z-index:500;overflow:hidden;visibility:hidden;">
+<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;">
 
   <!-- Drag + resize header -->
   <div id="timer-drag-handle"
@@ -2112,18 +2112,18 @@ function toggleSchedPanel() {
     renderSchedPanel();
 
     // Dock the timer into the schedule panel (desktop only)
-    if (timer && dock && timer.style.display !== 'none') {
+    if (timer && dock) {
       dock.appendChild(timer);
       timer.classList.add('docked');
+      timer.style.display = 'flex';
     }
   } else {
     panel.classList.remove('open');
     if (btn) { btn.style.background = ''; btn.style.color = ''; btn.style.borderColor = ''; }
 
-    // Undock the timer back to its floating position
-    if (timer && timer.classList.contains('docked')) {
-      timer.classList.remove('docked');
-      document.body.appendChild(timer);
+    // No floating timer anymore — just hide it when the schedule panel closes
+    if (timer) {
+      timer.style.display = 'none';
     }
   }
 }
@@ -3860,7 +3860,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       const mnav = document.getElementById('mobile-nav');
       if (authOverlay) authOverlay.classList.add('hidden');
       if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = ''; appEl.style.opacity = ''; }
-      if (timerBlock) { timerBlock.style.display = 'flex'; timerBlock.style.visibility = 'visible'; }
+      // timer-block stays hidden until the schedule panel is opened (docked-only now)
       if (mnav) mnav.style.display = '';
       await loadFromSupabase();
       render(); renderSidebar(); renderTasks();
