@@ -1265,7 +1265,7 @@ function openAddTask(){
 }
 
 function openEditTask(id){
-  const t=tasks.find(x=>x.id===id);if(!t)return;
+  const t=tasks.find(x=>x.id==id);if(!t)return;
   editingTaskId=id;
   document.getElementById('task-modal-title').textContent='Edit task';
   document.getElementById('task-modal-save-btn').textContent='Save changes';
@@ -1292,7 +1292,7 @@ async function saveTask(){
   const data={title,notes:document.getElementById('atd-notes').value.trim(),due:document.getElementById('atd-due').value,priority:document.getElementById('atd-priority').value,estMins:estMins||0,groupId};
   let savedTask;
   if(editingTaskId!==null){
-    const t=tasks.find(x=>x.id===editingTaskId);
+    const t=tasks.find(x=>x.id==editingTaskId);
     if(t){Object.assign(t,data); savedTask=t;}
   } else {
     savedTask = {id:taskNextId++,...data,done:false,scheduled:false,timeLeftMins:estMins||0};
@@ -1341,7 +1341,7 @@ function toggleTask(id) {
 function askDelTask(id){pendingDelTaskId=id;document.getElementById('del-task-overlay').classList.add('open');}
 function cancelDelTask(){pendingDelTaskId=null;document.getElementById('del-task-overlay').classList.remove('open');}
 async function confirmDelTask(){
-  const t = tasks.find(x=>x.id===pendingDelTaskId);
+  const t = tasks.find(x=>x.id==pendingDelTaskId);
   if (t) await dbDeleteTask(t);
   tasks=tasks.filter(x=>x.id!==pendingDelTaskId);
   pendingDelTaskId=null;
@@ -1383,22 +1383,22 @@ function renderTasks(){saveToStorage();
     return `<div class="task-item${t.done?' done':''}" draggable="true" data-task-id="${t.id}"
       ondragstart="onTaskDragStart(event,${t.id})"
       ondragend="onTaskDragEnd(event)">
-      <div class="task-cb" onclick="toggleTask(${t.id})"></div>
+      <div class="task-cb" onclick="toggleTask('${t.id}')"></div>
       <div class="task-content">
         <div class="task-title">${esc(t.title)}</div>
         ${hasMeta?`<div class="task-meta">${dueLabel}${priLabel}${estLabel}</div>`:''}
       </div>
       <div class="task-actions">
-        <button class="task-action-btn" onclick="toggleTimePopover(event,${t.id})" title="Set time"><i class="ti ti-clock"></i></button>
-        <button class="task-action-btn" onclick="openEditTask(${t.id})" title="Edit"><i class="ti ti-pencil"></i></button>
-        <button class="task-action-btn danger" onclick="askDelTask(${t.id})" title="Delete"><i class="ti ti-trash"></i></button>
+        <button class="task-action-btn" onclick="toggleTimePopover(event,'${t.id}')" title="Set time"><i class="ti ti-clock"></i></button>
+        <button class="task-action-btn" onclick="openEditTask('${t.id}')" title="Edit"><i class="ti ti-pencil"></i></button>
+        <button class="task-action-btn danger" onclick="askDelTask('${t.id}')" title="Delete"><i class="ti ti-trash"></i></button>
       </div>
       <div class="time-popover" id="tp-${t.id}">
         <input type="number" id="tp-h-${t.id}" min="0" max="99" placeholder="0" value="${t.estMins?Math.floor(t.estMins/60):''}" onkeydown="timePopoverKey(event,${t.id})"/>
         <span>hr</span>
         <input type="number" id="tp-m-${t.id}" min="0" max="59" placeholder="0" value="${t.estMins?t.estMins%60:''}" onkeydown="timePopoverKey(event,${t.id})"/>
         <span>min</span>
-        <button class="time-popover-save" onclick="saveTimePopover(${t.id})">Save</button>
+        <button class="time-popover-save" onclick="saveTimePopover('${t.id}')">Save</button>
       </div>
     </div>`;
   }
@@ -1477,7 +1477,7 @@ function closeAllTimePopovers(){
 function saveTimePopover(id){
   const h=parseInt(document.getElementById('tp-h-'+id).value)||0;
   const m=parseInt(document.getElementById('tp-m-'+id).value)||0;
-  const t=tasks.find(x=>x.id===id);
+  const t=tasks.find(x=>x.id==id);
   if(t)t.estMins=h*60+m;
   closeAllTimePopovers();
   renderTasks();
@@ -1532,7 +1532,7 @@ async function onGroupDrop(e,groupId){
   zone.classList.remove('drag-over');
   const id=parseInt(e.dataTransfer.getData('text/plain'));
   if(!id)return;
-  const t=tasks.find(x=>x.id===id);
+  const t=tasks.find(x=>x.id==id);
   if(t){
     t.groupId=groupId===null||groupId==='null'?null:parseInt(groupId);
     // Auto-expand group if collapsed
@@ -1814,14 +1814,14 @@ function populateTimerSelect(){
   // Restore previous selection
   if(prev)sel.value=String(prev);
   // If selected task no longer exists or is done, reset
-  if(timerTaskId&&!tasks.find(t=>t.id===timerTaskId&&!t.done)){
+  if(timerTaskId&&!tasks.find(t=>t.id==timerTaskId&&!t.done)){
     stopTimer();timerTaskId=null;timerSecondsLeft=0;updateTimerDisplay();
   }
 }
 
 function onTimerTaskChange(){
   const sel=document.getElementById('timer-task-select');
-  const newId=parseInt(sel.value)||null;
+  const newId=sel.value||null; // task ids are UUID strings now — don't parseInt them
   // Save remaining time on current task before switching
   if(timerTaskId){
     if(timerRunning)stopTimer();
@@ -1829,7 +1829,7 @@ function onTimerTaskChange(){
   }
   timerTaskId=newId;
   if(newId){
-    const t=tasks.find(x=>x.id===newId);
+    const t=tasks.find(x=>x.id==newId);
     timerSecondsLeft=(t.timeLeftMins!=null?t.timeLeftMins:t.estMins)*60;
     document.getElementById('timer-play-btn').disabled=false;
     updateTimerDisplay();
@@ -1882,7 +1882,7 @@ function stopTimer(){
 function resetTimer(){
   stopTimer();
   if(!timerTaskId)return;
-  const t=tasks.find(x=>x.id===timerTaskId);
+  const t=tasks.find(x=>x.id==timerTaskId);
   if(t){
     t.timeLeftMins=null; // reset to full estimate
     timerSecondsLeft=t.estMins*60;
@@ -1893,7 +1893,7 @@ function resetTimer(){
 
 function saveTimerProgress(){
   if(!timerTaskId)return;
-  const t=tasks.find(x=>x.id===timerTaskId);
+  const t=tasks.find(x=>x.id==timerTaskId);
   if(!t)return;
   t.timeLeftMins=Math.ceil(timerSecondsLeft/60);
   // Update just the clock label on this task item in the list, no full re-render
@@ -1952,7 +1952,7 @@ function updateTimerDisplay(){
 
 function updateProgressBar(){
   if(!timerTaskId)return;
-  const t=tasks.find(x=>x.id===timerTaskId);
+  const t=tasks.find(x=>x.id==timerTaskId);
   if(!t||!t.estMins)return;
   const total=t.estMins*60;
   const pct=Math.max(0,Math.min(100,(timerSecondsLeft/total)*100));
@@ -2278,11 +2278,11 @@ function renderManualTab(body) {
           value="${Math.min(timeLeft, slot.durMins)}"
           oninput="validateSchedInp(${t.id}, ${slot.durMins})" />
         <span style="font-size:11px;color:var(--text2);">min</span>
-        <button class="sched-btn" id="sched-do-btn-${t.id}" onclick="scheduleManual(${t.id}, ${slot.durMins})">Schedule</button>
+        <button class="sched-btn" id="sched-do-btn-${t.id}" onclick="scheduleManual('${t.id}', ${slot.durMins})">Schedule</button>
       </div>
       <div class="sched-err-msg" id="sched-err-${t.id}" style="display:none;">Time exceeds slot</div>` : '';
 
-    html += `<div class="sched-task-item${isSelected ? ' selected' : ''}" onclick="selectSchedTask(${t.id})">
+    html += `<div class="sched-task-item${isSelected ? ' selected' : ''}" onclick="selectSchedTask('${t.id}')">
       <div class="sched-task-title">${dotHtml}${esc(t.title)}</div>
       <div class="sched-task-meta">
         ${priLabel}${dueLabel}
