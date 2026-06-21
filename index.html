@@ -4044,7 +4044,15 @@ async function dbSaveEvent(ev) {
 async function dbDeleteEvent(ev) {
   if (!_supaUser) return;
   if (!ev._dbId) {
-    console.warn('dbDeleteEvent: event has no _dbId, cannot delete from Supabase (local-only removal):', ev.title, ev.date);
+    // No known row id — this event somehow exists locally without ever being saved with a _dbId.
+    // Fall back to matching by fields so we can still clean it up in Supabase instead of leaving an orphan
+    // that will just reappear on next reload.
+    console.warn('dbDeleteEvent: event has no _dbId, attempting fallback delete by match:', ev.title, ev.date);
+    let q = _supa.from('events').delete().eq('user_id', _supaUser.id).eq('date', ev.date).eq('title', ev.title || '');
+    if (ev.calId) q = q.eq('cal_id', ev.calId);
+    if (ev.startTime) q = q.eq('start_time', ev.startTime); else q = q.is('start_time', null);
+    const { error } = await q;
+    if (error) console.error('dbDeleteEvent fallback error:', error.message);
     return;
   }
   const { error } = await _supa.from('events').delete().eq('id', ev._dbId);
