@@ -4039,8 +4039,13 @@ async function dbSaveEvent(ev) {
 }
 
 async function dbDeleteEvent(ev) {
-  if (!_supaUser || !ev._dbId) return;
-  await _supa.from('events').delete().eq('id', ev._dbId);
+  if (!_supaUser) return;
+  if (!ev._dbId) {
+    console.warn('dbDeleteEvent: event has no _dbId, cannot delete from Supabase (local-only removal):', ev.title, ev.date);
+    return;
+  }
+  const { error } = await _supa.from('events').delete().eq('id', ev._dbId);
+  if (error) console.error('dbDeleteEvent error:', error.message, ev._dbId);
 }
 
 async function dbSaveCalendar(cal) {
