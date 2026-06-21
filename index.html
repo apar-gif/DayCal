@@ -1640,7 +1640,16 @@ function confirmImport(){
 }
 
 // ── Calendar helpers ──
-function eventsForDate(ds){return events.filter(e=>{const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));}
+function eventsForDate(ds){
+  const result = events.filter(e=>{const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+  if (events.length > 0 && window._evDebugLogged !== true) {
+    window._evDebugLogged = true;
+    console.log('[DEBUG] Total events in memory:', events.length);
+    console.log('[DEBUG] Sample events:', JSON.stringify(events.slice(0,5).map(e=>({title:e.title,date:e.date,calId:e.calId}))));
+    console.log('[DEBUG] Calendar visibility:', JSON.stringify(calendars.map(c=>({id:c.id,name:c.name,visible:c.visible}))));
+  }
+  return result;
+}
 function dateStr(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
 function calColor(calId){const c=calendars.find(x=>x.id==calId);return c?c.color:'#888';}
 
@@ -2795,6 +2804,7 @@ async function saveNewEvPopover() {
   const calId  = (calSel && calSel.selectedOptions[0] && calSel.selectedOptions[0].dataset.calid)
     ? calSel.selectedOptions[0].dataset.calid
     : (calendars[0] && calendars[0].id) || 1;
+  console.log('[DEBUG] saveNewEvPopover: calId =', calId, 'available calendars =', JSON.stringify(calendars.map(c=>({id:c.id,name:c.name,visible:c.visible}))));
 
   if (_editingEvRef) {
     const wasPendingNew = !!_editingEvRef._pendingNew;
