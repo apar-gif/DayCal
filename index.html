@@ -1882,7 +1882,7 @@ function stopTimer(){
   renderTasks();
   // Persist the saved progress to Supabase (only on stop, not every tick)
   if (timerTaskId) {
-    const t = tasks.find(x => x.id === timerTaskId);
+    const t = tasks.find(x => x.id == timerTaskId);
     if (t) dbSaveTask(t);
   }
 }
@@ -1977,7 +1977,7 @@ function updateTimerEst(t){
   const orig=t.estMins||0;
   const left=t.timeLeftMins!=null?t.timeLeftMins:orig;
   document.getElementById('timer-est').textContent=
-    left<orig?`${formatEst(left*60)} left of ${formatEst(orig*60)}`:`${formatEst(orig*60)} estimated`;
+    left<orig?`${formatEst(left)} left of ${formatEst(orig)}`:`${formatEst(orig)} estimated`;
 }
 
 // Populate timer when tasks change — hook into renderTasks
@@ -1987,7 +1987,7 @@ populateTimerSelect();
 
 // If timer state was restored from storage, reflect it in the UI
 if (timerTaskId) {
-  const _t = tasks.find(x => x.id === timerTaskId);
+  const _t = tasks.find(x => x.id == timerTaskId);
   if (_t) {
     document.getElementById('timer-play-btn').disabled = false;
     updateTimerDisplay();
@@ -3449,7 +3449,7 @@ saveTimerProgress = function() {
   _origSaveTimerProgress();
   // Update time-left display for the active timer task in the task list
   if (!timerTaskId) return;
-  const t = tasks.find(x => x.id === timerTaskId);
+  const t = tasks.find(x => x.id == timerTaskId);
   if (!t) return;
   const minsLeft = Math.ceil(timerSecondsLeft / 60);
   document.querySelectorAll(`.task-item[data-task-id="${timerTaskId}"]`).forEach(item => {
@@ -3483,7 +3483,7 @@ function addTimerMins(mins) {
   const secs = mins * 60;
   timerSecondsLeft += secs;
   // Also extend task's timeLeftMins so the extra time is saved
-  const t = tasks.find(x => x.id === timerTaskId);
+  const t = tasks.find(x => x.id == timerTaskId);
   if (t) {
     t.timeLeftMins = Math.ceil(timerSecondsLeft / 60);
     t.estMins = Math.max(t.estMins || 0, t.timeLeftMins);
@@ -3507,7 +3507,7 @@ function addTimerMinsCustom() {
 // ══════════════════════════════════════════════════════════════
 
 function showTimerCompleteModal() {
-  const t = timerTaskId ? tasks.find(x => x.id === timerTaskId) : null;
+  const t = timerTaskId ? tasks.find(x => x.id == timerTaskId) : null;
   const name = t ? t.title : 'this task';
   document.getElementById('tc-title').textContent = "Time's up!";
   document.getElementById('tc-sub').textContent = `Did you finish "${name}"?`;
