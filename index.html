@@ -4167,8 +4167,12 @@ async function dbDeleteGroup(group) {
     return;
   }
 
-  // Regular page load — sign out
+  // Regular page load — sign out immediately, blocking onAuthStateChange the whole time
+  // so a momentarily-restored session can never flash the calendar before we force sign-out.
+  _confirmingEmail = true;
   try { await _supa.auth.signOut(); } catch(e) {}
+  _confirmingEmail = false;
+  showSignIn();
 })();
 
 
