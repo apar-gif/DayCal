@@ -2705,6 +2705,15 @@ function openNewEvOnDate(e, ds) {
 }
 
 function _openPopover(anchorEl, ds, startTime, endTime) {
+  // Clean up any leftover unsaved placeholder from a previous popover that
+  // was opened without being saved or explicitly closed (e.g. clicking
+  // straight from one empty slot to another).
+  if (_editingEvRef && _editingEvRef._pendingNew) {
+    const oldIdx = events.indexOf(_editingEvRef);
+    if (oldIdx >= 0) events.splice(oldIdx, 1);
+    _editingEvRef = null;
+  }
+
   _nepDate = ds;
   _nepCalId = null; // reset so each fresh open starts on first calendar
 
@@ -3032,18 +3041,30 @@ document.addEventListener('mouseup', async () => {
     didChange = (newStartTime !== oldStartTime || newEndTime !== oldEndTime);
 
     if (didChange) {
-      const startDelta = _timeStrToMins(newStartTime) - _timeStrToMins(oldStartTime);
-      const endDelta = _timeStrToMins(newEndTime) - _timeStrToMins(oldEndTime);
-
-      if (globalEvRef.recurId && !isResize) {
-        // Recurring event moved (not resized) — ask which instances to apply this shift to
-        _pendingDragShift = { ev: globalEvRef, startDelta, endDelta, newStartTime, newEndTime };
-        showDragRecurrenceModal();
-      } else {
-        // Single event, or a resize (resizes only ever apply to the one instance)
+      if (globalEvRef._pendingNew) {
+        // This is the placeholder block for an event still being created in the popover —
+        // it hasn't been saved yet, so just update its time and sync the popover's inputs.
+        // No Supabase save, no recurrence prompt (it has no recurId yet).
         globalEvRef.startTime = newStartTime;
         globalEvRef.endTime   = newEndTime;
-        await dbSaveEvent(globalEvRef);
+        const startInp = document.getElementById('nep-start');
+        const endInp   = document.getElementById('nep-end');
+        if (startInp) startInp.value = newStartTime;
+        if (endInp)   endInp.value   = newEndTime;
+      } else {
+        const startDelta = _timeStrToMins(newStartTime) - _timeStrToMins(oldStartTime);
+        const endDelta = _timeStrToMins(newEndTime) - _timeStrToMins(oldEndTime);
+
+        if (globalEvRef.recurId && !isResize) {
+          // Recurring event moved (not resized) — ask which instances to apply this shift to
+          _pendingDragShift = { ev: globalEvRef, startDelta, endDelta, newStartTime, newEndTime };
+          showDragRecurrenceModal();
+        } else {
+          // Single event, or a resize (resizes only ever apply to the one instance)
+          globalEvRef.startTime = newStartTime;
+          globalEvRef.endTime   = newEndTime;
+          await dbSaveEvent(globalEvRef);
+        }
       }
     }
   }
