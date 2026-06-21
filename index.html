@@ -3682,9 +3682,12 @@ function clearEventSelection() {
 }
 
 // Clicking anywhere else (background, other UI) clears selection
+// EXCEPT inside the delete-recurrence modal, since its buttons need _selectedEvRef
+// to still be set when their onclick handlers run (mousedown fires before click).
 document.addEventListener('mousedown', e => {
   if (!_selectedEvRef) return;
   if (e.target.closest('.day-ev-block')) return; // handled by selectEventBlock itself
+  if (e.target.closest('#delete-recur-overlay')) return; // don't clear while interacting with the delete-scope modal
   clearEventSelection();
 });
 
