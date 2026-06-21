@@ -1063,16 +1063,19 @@ function openGroupModal(id){
   setTimeout(()=>document.getElementById('group-name-input').focus(),50);
 }
 function closeGroupModal(){editingGroupId=null;document.getElementById('group-overlay').classList.remove('open');}
-function saveGroup(){
+async function saveGroup(){
   const name=document.getElementById('group-name-input').value.trim();
   if(!name)return;
+  let g;
   if(editingGroupId!==null){
-    const g=groups.find(x=>x.id===editingGroupId);
+    g=groups.find(x=>x.id===editingGroupId);
     if(g)g.name=name;
   } else {
-    groups.push({id:groupNextId++,name});
+    g={id:groupNextId++,name};
+    groups.push(g);
   }
   closeGroupModal();renderTasks();
+  if (g) await dbSaveGroup(g);
 }
 function askDelGroup(id){
   pendingDelGroupId=id;
@@ -1081,12 +1084,16 @@ function askDelGroup(id){
   document.getElementById('del-group-overlay').classList.add('open');
 }
 function cancelDelGroup(){pendingDelGroupId=null;document.getElementById('del-group-overlay').classList.remove('open');}
-function confirmDelGroup(){
+async function confirmDelGroup(){
+  const g = groups.find(x=>x.id===pendingDelGroupId);
+  const affectedTasks = tasks.filter(t=>t.groupId===pendingDelGroupId);
   tasks.forEach(t=>{if(t.groupId===pendingDelGroupId)t.groupId=null;});
   groups=groups.filter(x=>x.id!==pendingDelGroupId);
   pendingDelGroupId=null;
   document.getElementById('del-group-overlay').classList.remove('open');
   renderTasks();
+  if (g) await dbDeleteGroup(g);
+  await Promise.all(affectedTasks.map(t => dbSaveTask(t)));
 }
 function toggleGroupCollapse(id){
   if(collapsedGroups.has(id))collapsedGroups.delete(id);else collapsedGroups.add(id);
@@ -1379,7 +1386,7 @@ function renderTasks(){saveToStorage();
     const estLabel=estMinsDisplay?`<span class="task-due" title="${t.timeLeftMins!=null?'Time remaining':'Estimated time'}"><i class="ti ti-clock" style="font-size:11px;"></i>${formatEst(estMinsDisplay)}${t.timeLeftMins!=null&&t.timeLeftMins<t.estMins?' left':''}</span>`:'';
     const hasMeta=dueLabel||priLabel||estLabel;
     return `<div class="task-item${t.done?' done':''}" draggable="true" data-task-id="${t.id}"
-      ondragstart="onTaskDragStart(event,${t.id})"
+      ondragstart="onTaskDragStart(event,'${t.id}')"
       ondragend="onTaskDragEnd(event)">
       <div class="task-cb" onclick="toggleTask('${t.id}')"></div>
       <div class="task-content">
@@ -1420,7 +1427,7 @@ function renderTasks(){saveToStorage();
       <div class="task-group-body" data-group-id="${g.id}"
         ondragover="onGroupDragOver(event)"
         ondragleave="onGroupDragLeave(event)"
-        ondrop="onGroupDrop(event,${g.id})">
+        ondrop="onGroupDrop(event,'${g.id}')">
         ${gtasks.length?gtasks.map(taskHtml).join(''):`<div style="font-size:12px;color:var(--text3);padding:6px 6px 4px;">No tasks — drop one here.</div>`}
       </div>
     </div>`;
@@ -1536,11 +1543,11 @@ async function onGroupDrop(e,groupId){
   e.preventDefault();
   const zone=e.currentTarget;
   zone.classList.remove('drag-over');
-  const id=parseInt(e.dataTransfer.getData('text/plain'));
+  const id=e.dataTransfer.getData('text/plain'); // task ids are UUID strings — don't parseInt
   if(!id)return;
   const t=tasks.find(x=>x.id==id);
   if(t){
-    t.groupId=groupId===null||groupId==='null'?null:parseInt(groupId);
+    t.groupId=(groupId===null||groupId==='null')?null:parseInt(groupId); // group ids are still local numeric ids (not yet synced as UUIDs)
     // Auto-expand group if collapsed
     if(t.groupId&&collapsedGroups.has(t.groupId))collapsedGroups.delete(t.groupId);
   }
