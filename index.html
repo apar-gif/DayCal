@@ -2998,7 +2998,7 @@ document.addEventListener('mousemove', e => {
   if (e.clientY < wrapRect.top    + 40) wrap.scrollTop -= 6;
 });
 
-document.addEventListener('mouseup', () => {
+document.addEventListener('mouseup', async () => {
   if (!_drag) return;
   const { ds, evIdx, durMins, ghost, timeLabel, blockEl, _snappedStart, isResize } = _drag;
 
@@ -3008,18 +3008,43 @@ document.addEventListener('mouseup', () => {
   document.body.style.cursor     = '';
 
   const { globalEvRef } = _drag;
+  let oldStartTime = null, oldEndTime = null, didChange = false;
+
   if (globalEvRef) {
+    oldStartTime = globalEvRef.startTime;
+    oldEndTime = globalEvRef.endTime;
+
+    let newStartTime, newEndTime;
     if (isResize) {
       // Resize: keep start time, change end time only
       const newDur = Math.max(_drag._snappedDur, 15);
       const [sh, sm] = globalEvRef.startTime.split(':').map(Number);
       const newEnd = sh * 60 + sm + newDur;
-      globalEvRef.endTime = _minsToTimeStr(Math.min(newEnd, 24 * 60));
+      newStartTime = globalEvRef.startTime;
+      newEndTime = _minsToTimeStr(Math.min(newEnd, 24 * 60));
     } else {
       const newStart = _snappedStart;
       const newEnd   = newStart + durMins;
-      globalEvRef.startTime = _minsToTimeStr(newStart);
-      globalEvRef.endTime   = _minsToTimeStr(newEnd);
+      newStartTime = _minsToTimeStr(newStart);
+      newEndTime   = _minsToTimeStr(newEnd);
+    }
+
+    didChange = (newStartTime !== oldStartTime || newEndTime !== oldEndTime);
+
+    if (didChange) {
+      const startDelta = _timeStrToMins(newStartTime) - _timeStrToMins(oldStartTime);
+      const endDelta = _timeStrToMins(newEndTime) - _timeStrToMins(oldEndTime);
+
+      if (globalEvRef.recurId && !isResize) {
+        // Recurring event moved (not resized) — ask which instances to apply this shift to
+        _pendingDragShift = { ev: globalEvRef, startDelta, endDelta, newStartTime, newEndTime };
+        showDragRecurrenceModal();
+      } else {
+        // Single event, or a resize (resizes only ever apply to the one instance)
+        globalEvRef.startTime = newStartTime;
+        globalEvRef.endTime   = newEndTime;
+        await dbSaveEvent(globalEvRef);
+      }
     }
   }
 
@@ -3038,6 +3063,70 @@ document.addEventListener('mouseup', () => {
     renderSchedPanel();
   }
 });
+
+function _timeStrToMins(t) {
+  if (!t) return 0;
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+// ── Recurring event drag — ask which instances to shift ──
+let _pendingDragShift = null;
+
+function showDragRecurrenceModal() {
+  const overlay = document.getElementById('drag-recur-overlay');
+  if (overlay) overlay.classList.add('open');
+}
+
+async function applyDragRecurrenceScope(scope) {
+  const overlay = document.getElementById('drag-recur-overlay');
+  if (overlay) overlay.classList.remove('open');
+  const pending = _pendingDragShift;
+  _pendingDragShift = null;
+  if (!pending) { render(); return; }
+
+  const { ev, startDelta, endDelta, newStartTime, newEndTime } = pending;
+
+  if (scope === 'this') {
+    ev.startTime = newStartTime;
+    ev.endTime = newEndTime;
+    await dbSaveEvent(ev);
+  } else if (scope === 'future') {
+    const cutoff = ev.date;
+    const toSave = [];
+    events.forEach(e => {
+      if (e.recurId === ev.recurId && e.date >= cutoff) {
+        e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
+        e.endTime = _minsToTimeStr(_timeStrToMins(e.endTime) + endDelta);
+        toSave.push(e);
+      }
+    });
+    await Promise.all(toSave.map(e => dbSaveEvent(e)));
+  } else if (scope === 'all') {
+    const toSave = [];
+    events.forEach(e => {
+      if (e.recurId === ev.recurId) {
+        e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
+        e.endTime = _minsToTimeStr(_timeStrToMins(e.endTime) + endDelta);
+        toSave.push(e);
+      }
+    });
+    await Promise.all(toSave.map(e => dbSaveEvent(e)));
+  }
+
+  const _wrap = document.querySelector('.day-grid-wrap');
+  const _savedScroll = _wrap ? _wrap.scrollTop : 0;
+  render();
+  const _wrapAfter = document.querySelector('.day-grid-wrap');
+  if (_wrapAfter) _wrapAfter.scrollTop = _savedScroll;
+}
+
+function cancelDragRecurrence() {
+  const overlay = document.getElementById('drag-recur-overlay');
+  if (overlay) overlay.classList.remove('open');
+  _pendingDragShift = null;
+  render(); // revert visual position since nothing was saved
+}
 
 
 // ══════════════════════════════════════════════════════════════
@@ -3688,6 +3777,7 @@ document.addEventListener('mousedown', e => {
   if (!_selectedEvRef) return;
   if (e.target.closest('.day-ev-block')) return; // handled by selectEventBlock itself
   if (e.target.closest('#delete-recur-overlay')) return; // don't clear while interacting with the delete-scope modal
+  if (e.target.closest('#drag-recur-overlay')) return; // don't clear while interacting with the move-scope modal
   clearEventSelection();
 });
 
@@ -4719,6 +4809,21 @@ async function importSelectedGcals() {
       <button onclick="deleteRecurrenceScope('this')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This event only</button>
       <button onclick="deleteRecurrenceScope('future')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This and following events</button>
       <button onclick="deleteRecurrenceScope('all')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--danger);background:none;color:var(--danger);cursor:pointer;font-size:13px;">All events in the series</button>
+    </div>
+  </div>
+</div>
+
+<div class="settings-overlay" id="drag-recur-overlay" onclick="if(event.target===this)cancelDragRecurrence()">
+  <div class="settings-dialog" style="width:300px;">
+    <div class="settings-title">
+      <span><i class="ti ti-calendar-time" style="margin-right:7px;color:var(--accent);"></i>Move recurring event</span>
+      <button onclick="cancelDragRecurrence()"><i class="ti ti-x"></i></button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">This event repeats. What would you like to move?</div>
+    <div style="display:flex;flex-direction:column;gap:7px;">
+      <button onclick="applyDragRecurrenceScope('this')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This event only</button>
+      <button onclick="applyDragRecurrenceScope('future')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This and following events</button>
+      <button onclick="applyDragRecurrenceScope('all')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--accent);background:none;color:var(--accent);cursor:pointer;font-size:13px;">All events in the series</button>
     </div>
   </div>
 </div>
