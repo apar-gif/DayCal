@@ -858,7 +858,7 @@
 </div>
 
 <!-- Draggable + resizable timer panel -->
-<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;" ondragover="onTimerDragOver(event)" ondragleave="onTimerDragLeave(event)" ondrop="onTimerDrop(event)">
+<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;" ondragover="onTimerDragOver(event)" ondragleave="onTimerDragLeave(event)" ondrop="onTimerDrop(event)" ondragend="this.classList.remove('timer-drag-over')">
 
   <!-- Drag + resize header -->
   <div id="timer-drag-handle"
@@ -1836,29 +1836,37 @@ function populateTimerSelect(){
 
 // ── Drag task into timer ──
 function onTimerDragOver(e) {
-  // Only accept task drags (not calendar event drags)
+  // Allow drop only if dragging a task (dragTaskId is set by onTaskDragStart)
   if (!dragTaskId) return;
   e.preventDefault();
-  e.dataTransfer.dropEffect = 'link';
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = 'copy';
   document.getElementById('timer-block').classList.add('timer-drag-over');
 }
 
 function onTimerDragLeave(e) {
-  // Only remove highlight if actually leaving the timer block (not a child element)
-  if (!e.relatedTarget || !e.currentTarget.contains(e.relatedTarget)) {
-    document.getElementById('timer-block').classList.remove('timer-drag-over');
-  }
+  // Use a small delay so brief leaves to child elements don't flicker
+  const timer = document.getElementById('timer-block');
+  setTimeout(() => {
+    if (!timer.matches(':hover')) {
+      timer.classList.remove('timer-drag-over');
+    }
+  }, 50);
 }
 
 function onTimerDrop(e) {
   e.preventDefault();
-  document.getElementById('timer-block').classList.remove('timer-drag-over');
-  const id = e.dataTransfer.getData('text/plain');
+  e.stopPropagation();
+  const timer = document.getElementById('timer-block');
+  timer.classList.remove('timer-drag-over');
+
+  // Try dataTransfer first, fall back to dragTaskId global
+  const id = e.dataTransfer.getData('text/plain') || dragTaskId;
   if (!id) return;
   const t = tasks.find(x => x.id == id);
   if (!t || t.done) return;
 
-  // Set the timer select to this task and trigger the change
+  // Load task into timer
   const sel = document.getElementById('timer-task-select');
   if (sel) {
     sel.value = String(t.id);
