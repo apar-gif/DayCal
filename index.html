@@ -858,7 +858,7 @@
 </div>
 
 <!-- Draggable + resizable timer panel -->
-<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;" ondragover="onTimerDragOver(event)" ondragleave="onTimerDragLeave(event)" ondrop="onTimerDrop(event)" ondragend="this.classList.remove('timer-drag-over')">
+<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;position:relative;" ondragover="onTimerDragOver(event)" ondragleave="onTimerDragLeave(event)" ondrop="onTimerDrop(event)" ondragend="this.classList.remove('timer-drag-over')">
 
   <!-- Drag + resize header -->
   <div id="timer-drag-handle"
@@ -883,6 +883,10 @@
     style="position:absolute;bottom:0;left:0;right:0;height:6px;cursor:ns-resize;z-index:10;display:flex;align-items:flex-end;justify-content:center;padding-bottom:2px;">
     <div id="timer-resize-grip" style="width:28px;height:3px;border-radius:2px;background:var(--border2);transition:background .15s;"></div>
   </div>
+
+  <!-- Transparent drop overlay — sits on top during drag to catch drop events that child elements would otherwise swallow -->
+  <div id="timer-drop-overlay" style="display:none;position:absolute;inset:0;z-index:999;background:transparent;"
+    ondragover="onTimerDragOver(event)" ondrop="onTimerDrop(event)" ondragleave="onTimerDragLeave(event)"></div>
 
   <!-- Content -->
   <div style="padding:10px 12px 16px;display:flex;flex-direction:column;gap:10px;flex:1;overflow:hidden;">
@@ -1836,22 +1840,23 @@ function populateTimerSelect(){
 
 // ── Drag task into timer ──
 function onTimerDragOver(e) {
-  // Allow drop only if dragging a task (dragTaskId is set by onTaskDragStart)
   if (!dragTaskId) return;
   e.preventDefault();
   e.stopPropagation();
   e.dataTransfer.dropEffect = 'copy';
   document.getElementById('timer-block').classList.add('timer-drag-over');
+  // Show transparent overlay so child elements don't block the drop
+  const overlay = document.getElementById('timer-drop-overlay');
+  if (overlay) overlay.style.display = 'block';
 }
 
 function onTimerDragLeave(e) {
-  // Use a small delay so brief leaves to child elements don't flicker
   const timer = document.getElementById('timer-block');
-  setTimeout(() => {
-    if (!timer.matches(':hover')) {
-      timer.classList.remove('timer-drag-over');
-    }
-  }, 50);
+  if (!e.relatedTarget || !timer.contains(e.relatedTarget)) {
+    timer.classList.remove('timer-drag-over');
+    const overlay = document.getElementById('timer-drop-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
 }
 
 function onTimerDrop(e) {
@@ -1859,21 +1864,18 @@ function onTimerDrop(e) {
   e.stopPropagation();
   const timer = document.getElementById('timer-block');
   timer.classList.remove('timer-drag-over');
+  // Hide overlay
+  const overlay = document.getElementById('timer-drop-overlay');
+  if (overlay) overlay.style.display = 'none';
 
-  // Try dataTransfer first, fall back to dragTaskId global
   const id = e.dataTransfer.getData('text/plain') || String(dragTaskId || '');
-  console.log('[TimerDrop] id=', id, 'dragTaskId=', dragTaskId);
   if (!id) return;
   const t = tasks.find(x => x.id == id);
-  console.log('[TimerDrop] found task=', t?.title);
   if (!t || t.done) return;
 
-  // Load task into timer
   const sel = document.getElementById('timer-task-select');
-  console.log('[TimerDrop] select value before=', sel?.value, 'options=', sel?.options.length);
   if (sel) {
     sel.value = String(t.id);
-    console.log('[TimerDrop] select value after=', sel?.value);
     onTimerTaskChange();
   }
 }
