@@ -1861,15 +1861,19 @@ function onTimerDrop(e) {
   timer.classList.remove('timer-drag-over');
 
   // Try dataTransfer first, fall back to dragTaskId global
-  const id = e.dataTransfer.getData('text/plain') || dragTaskId;
+  const id = e.dataTransfer.getData('text/plain') || String(dragTaskId || '');
+  console.log('[TimerDrop] id=', id, 'dragTaskId=', dragTaskId);
   if (!id) return;
   const t = tasks.find(x => x.id == id);
+  console.log('[TimerDrop] found task=', t?.title);
   if (!t || t.done) return;
 
   // Load task into timer
   const sel = document.getElementById('timer-task-select');
+  console.log('[TimerDrop] select value before=', sel?.value, 'options=', sel?.options.length);
   if (sel) {
     sel.value = String(t.id);
+    console.log('[TimerDrop] select value after=', sel?.value);
     onTimerTaskChange();
   }
 }
