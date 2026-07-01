@@ -858,7 +858,7 @@
 </div>
 
 <!-- Draggable + resizable timer panel -->
-<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;position:relative;" ondragover="onTimerDragOver(event)" ondragleave="onTimerDragLeave(event)" ondrop="onTimerDrop(event)" ondragend="this.classList.remove('timer-drag-over')">
+<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;position:relative;">
 
   <!-- Drag + resize header -->
   <div id="timer-drag-handle"
@@ -883,10 +883,6 @@
     style="position:absolute;bottom:0;left:0;right:0;height:6px;cursor:ns-resize;z-index:10;display:flex;align-items:flex-end;justify-content:center;padding-bottom:2px;">
     <div id="timer-resize-grip" style="width:28px;height:3px;border-radius:2px;background:var(--border2);transition:background .15s;"></div>
   </div>
-
-  <!-- Transparent drop overlay — sits on top during drag to catch drop events that child elements would otherwise swallow -->
-  <div id="timer-drop-overlay" style="display:none;position:absolute;inset:0;z-index:999;background:transparent;"
-    ondragover="onTimerDragOver(event)" ondrop="onTimerDrop(event)" ondragleave="onTimerDragLeave(event)"></div>
 
   <!-- Content -->
   <div style="padding:10px 12px 16px;display:flex;flex-direction:column;gap:10px;flex:1;overflow:hidden;">
@@ -1524,7 +1520,21 @@ function onTaskDragStart(e,id){
   setTimeout(()=>{const el=e.target.closest('.task-item');if(el)el.classList.add('dragging');},0);
 }
 
+// Highlight timer while dragging a task over it (using dragover on document)
+document.addEventListener('dragover', e => {
+  if (!dragTaskId) return;
+  const timer = document.getElementById('timer-block');
+  if (!timer) return;
+  if (_isOverTimer(e)) {
+    timer.classList.add('timer-drag-over');
+    e.preventDefault(); // needed to allow drop to fire (even though we use coordinate detection)
+  } else {
+    timer.classList.remove('timer-drag-over');
+  }
+});
+
 function onTaskDragEnd(e){
+  _checkTimerDrop(e); // check if released over timer before clearing dragTaskId
   dragTaskId=null;
   document.querySelectorAll('.task-item.dragging').forEach(el=>el.classList.remove('dragging'));
   document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
@@ -1838,38 +1848,24 @@ function populateTimerSelect(){
   }
 }
 
-// ── Drag task into timer ──
-function onTimerDragOver(e) {
+// ── Drag task into timer — coordinate-based detection ──
+// (HTML5 drop events don't fire reliably on elements with interactive children)
+function _isOverTimer(e) {
+  const timer = document.getElementById('timer-block');
+  if (!timer || timer.style.display === 'none') return false;
+  const r = timer.getBoundingClientRect();
+  return e.clientX >= r.left && e.clientX <= r.right &&
+         e.clientY >= r.top  && e.clientY <= r.bottom;
+}
+
+// Called from onTaskDragEnd — check if released over timer
+function _checkTimerDrop(e) {
+  const timer = document.getElementById('timer-block');
+  if (timer) timer.classList.remove('timer-drag-over');
   if (!dragTaskId) return;
-  e.preventDefault();
-  e.stopPropagation();
-  e.dataTransfer.dropEffect = 'copy';
-  document.getElementById('timer-block').classList.add('timer-drag-over');
-  // Show transparent overlay so child elements don't block the drop
-  const overlay = document.getElementById('timer-drop-overlay');
-  if (overlay) overlay.style.display = 'block';
-}
+  if (!_isOverTimer(e)) return;
 
-function onTimerDragLeave(e) {
-  const timer = document.getElementById('timer-block');
-  if (!e.relatedTarget || !timer.contains(e.relatedTarget)) {
-    timer.classList.remove('timer-drag-over');
-    const overlay = document.getElementById('timer-drop-overlay');
-    if (overlay) overlay.style.display = 'none';
-  }
-}
-
-function onTimerDrop(e) {
-  e.preventDefault();
-  e.stopPropagation();
-  const timer = document.getElementById('timer-block');
-  timer.classList.remove('timer-drag-over');
-  // Hide overlay
-  const overlay = document.getElementById('timer-drop-overlay');
-  if (overlay) overlay.style.display = 'none';
-
-  const id = e.dataTransfer.getData('text/plain') || String(dragTaskId || '');
-  if (!id) return;
+  const id = String(dragTaskId);
   const t = tasks.find(x => x.id == id);
   if (!t || t.done) return;
 
