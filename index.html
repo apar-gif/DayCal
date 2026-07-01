@@ -275,6 +275,8 @@
   /* Drag and drop */
   .task-item[draggable]{cursor:grab;}
   .task-item[draggable]:active{cursor:grabbing;}
+  #timer-block.timer-drag-over{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-bg);}
+  #timer-block.timer-drag-over *{pointer-events:none;}
   .task-item.dragging{opacity:.4;}
   .task-group-body.drag-over{background:var(--accent-bg);border-radius:7px;outline:1.5px dashed var(--accent);}
   .ungrouped-drop.drag-over{background:var(--bg2);border-radius:7px;outline:1.5px dashed var(--border2);}
@@ -856,7 +858,7 @@
 </div>
 
 <!-- Draggable + resizable timer panel -->
-<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;">
+<div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;" ondragover="onTimerDragOver(event)" ondragleave="onTimerDragLeave(event)" ondrop="onTimerDrop(event)">
 
   <!-- Drag + resize header -->
   <div id="timer-drag-handle"
@@ -1829,6 +1831,38 @@ function populateTimerSelect(){
   // If selected task no longer exists or is done, reset
   if(timerTaskId&&!tasks.find(t=>t.id==timerTaskId&&!t.done)){
     stopTimer();timerTaskId=null;timerSecondsLeft=0;updateTimerDisplay();
+  }
+}
+
+// ── Drag task into timer ──
+function onTimerDragOver(e) {
+  // Only accept task drags (not calendar event drags)
+  if (!dragTaskId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'link';
+  document.getElementById('timer-block').classList.add('timer-drag-over');
+}
+
+function onTimerDragLeave(e) {
+  // Only remove highlight if actually leaving the timer block (not a child element)
+  if (!e.relatedTarget || !e.currentTarget.contains(e.relatedTarget)) {
+    document.getElementById('timer-block').classList.remove('timer-drag-over');
+  }
+}
+
+function onTimerDrop(e) {
+  e.preventDefault();
+  document.getElementById('timer-block').classList.remove('timer-drag-over');
+  const id = e.dataTransfer.getData('text/plain');
+  if (!id) return;
+  const t = tasks.find(x => x.id == id);
+  if (!t || t.done) return;
+
+  // Set the timer select to this task and trigger the change
+  const sel = document.getElementById('timer-task-select');
+  if (sel) {
+    sel.value = String(t.id);
+    onTimerTaskChange();
   }
 }
 
@@ -2809,30 +2843,33 @@ async function saveNewEvPopover() {
   const calId  = (calSel && calSel.selectedOptions[0] && calSel.selectedOptions[0].dataset.calid)
     ? calSel.selectedOptions[0].dataset.calid
     : (calendars[0] && calendars[0].id) || 1;
-  console.log('[DEBUG] saveNewEvPopover: calId =', calId, 'available calendars =', JSON.stringify(calendars.map(c=>({id:c.id,name:c.name,visible:c.visible}))));
 
   if (_editingEvRef) {
-    const wasPendingNew = !!_editingEvRef._pendingNew;
+    // Capture a stable local reference — _editingEvRef is a global that can be
+    // cleared to null by other code (e.g. clicking outside closes the popover)
+    // while we're mid-await below, which would otherwise crash this function.
+    const evRef = _editingEvRef;
+    const wasPendingNew = !!evRef._pendingNew;
 
-    _editingEvRef.title     = title;
-    _editingEvRef.startTime = startTime;
-    _editingEvRef.endTime   = endTime;
-    _editingEvRef.location  = location || undefined;
-    _editingEvRef.meet      = meet || undefined;
-    _editingEvRef.calId     = calId;
-    delete _editingEvRef._pendingNew;
+    evRef.title     = title;
+    evRef.startTime = startTime;
+    evRef.endTime   = endTime;
+    evRef.location  = location || undefined;
+    evRef.meet      = meet || undefined;
+    evRef.calId     = calId;
+    delete evRef._pendingNew;
 
     // Save to Supabase
-    await dbSaveEvent(_editingEvRef);
+    await dbSaveEvent(evRef);
 
     if (wasPendingNew) {
       const rule = _buildRecurRule(_nepDate);
       if (rule) {
         const recurId = 'recur_' + Date.now();
         const recurrenceLabel = _recurrenceLabel(document.getElementById('nep-recur').value);
-        _editingEvRef.recurId = recurId;
-        _editingEvRef.recurrenceLabel = recurrenceLabel;
-        const base = { ..._editingEvRef };
+        evRef.recurId = recurId;
+        evRef.recurrenceLabel = recurrenceLabel;
+        const base = { ...evRef };
         const recurInstances = expandRecurrence(_nepDate, rule).map(date => ({
           ...base, date, _recurInstance: true, _dbId: undefined
         }));
@@ -2841,7 +2878,9 @@ async function saveNewEvPopover() {
       }
     }
 
-    _editingEvRef = null;
+    // Only clear the global if it still points to the same event we just saved
+    // (it may have already been cleared/replaced by another popover open/close)
+    if (_editingEvRef === evRef) _editingEvRef = null;
   }
 
   closeNewEvPopover();
