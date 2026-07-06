@@ -57,7 +57,7 @@
     --sh-lg:0 4px 6px rgba(0,0,0,.3),0 10px 40px rgba(0,0,0,.5);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);padding:1rem;transition:background .2s,color .2s;-webkit-font-smoothing:antialiased;}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);padding:12px 14px;transition:background .2s,color .2s;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
   button{cursor:pointer;border-radius:var(--radius-sm);transition:background .15s,color .15s,border-color .15s,box-shadow .15s;font-family:inherit;}
 
   .nav-btn{background:var(--bg);border:1px solid var(--border);color:var(--text2);font-weight:500;font-size:13px;padding:6px 12px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
@@ -658,6 +658,44 @@
     .mobile-timer-panel.active{display:flex;}
     .mobile-timer-panel #timer-block{position:relative!important;left:auto!important;bottom:auto!important;top:auto!important;width:100%!important;max-width:100%!important;height:100%!important;max-height:none!important;min-height:calc(100vh - 56px)!important;border-radius:0!important;border:none!important;box-shadow:none!important;flex:1;}
   }
+
+  /* ── Extra polish ── */
+  /* Smooth focus rings */
+  input:focus,select:focus{outline:none;border-color:var(--accent)!important;box-shadow:0 0 0 3px rgba(79,126,248,.12);}
+
+  /* Sidebar calendar item hover — more depth */
+  .cal-item:hover{background:var(--bg2);box-shadow:inset 0 0 0 1px var(--border);}
+
+  /* Schedule slot box — card-style */
+  .sched-slot-box{border-radius:12px;margin:12px 12px 0;border:1px solid rgba(79,126,248,.25)!important;background:linear-gradient(135deg,rgba(79,126,248,.08),rgba(79,126,248,.03))!important;}
+
+  /* Schedule best pick card — glowing accent */
+  .sched-card.best{border-color:var(--accent)!important;box-shadow:0 2px 12px rgba(79,126,248,.18)!important;}
+
+  /* New calendar/import buttons — hover glow */
+  .btn-new-cal:hover,.btn-import:hover{background:var(--accent-bg)!important;color:var(--accent-text)!important;}
+
+  /* Sched-timer-dock separator */
+  #sched-timer-dock{border-bottom:1px solid var(--border);margin-bottom:0;}
+
+  /* Today badge on today button */
+  .cal-today-btn{font-weight:600;}
+
+  /* Task group headers */
+  .task-group-header{font-weight:700;font-size:13px;letter-spacing:-.01em;}
+
+  /* Timer running state — glow the play button */
+  #timer-play-btn:not([disabled]):hover{box-shadow:0 4px 16px rgba(79,126,248,.5)!important;transform:scale(1.05);}
+
+  /* Progress bar glow */
+  #timer-progress-bar{box-shadow:0 0 8px rgba(79,126,248,.4);}
+
+  /* More rounds on dialogs */
+  .dialog{border-radius:16px!important;}
+  .settings-dialog{border-radius:16px!important;}
+
+  /* User bar */
+  #user-bar{background:var(--bg2);border-top:1px solid var(--border);padding:10px 14px;font-size:12px;font-weight:500;}
 </style>
 </head>
 <body>
@@ -898,56 +936,43 @@
 <div id="timer-block" style="display:none;flex-direction:column;overflow:hidden;position:relative;">
 
   <!-- Drag + resize header -->
-  <div id="timer-drag-handle"
-    style="padding:8px 12px 6px;cursor:grab;display:flex;align-items:center;justify-content:space-between;border-bottom:.5px solid var(--border);flex-shrink:0;user-select:none;">
-    <div style="display:flex;align-items:center;gap:6px;">
-      <!-- Grip dots -->
-      <div style="display:grid;grid-template-columns:repeat(2,4px);gap:3px;opacity:.4;">
-        <div style="width:3px;height:3px;border-radius:50%;background:var(--text2);"></div>
-        <div style="width:3px;height:3px;border-radius:50%;background:var(--text2);"></div>
-        <div style="width:3px;height:3px;border-radius:50%;background:var(--text2);"></div>
-        <div style="width:3px;height:3px;border-radius:50%;background:var(--text2);"></div>
-        <div style="width:3px;height:3px;border-radius:50%;background:var(--text2);"></div>
-        <div style="width:3px;height:3px;border-radius:50%;background:var(--text2);"></div>
-      </div>
-      <span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;">Timer</span>
-    </div>
-    <span class="tasks-count" id="timer-status-badge" style="display:none;">Running</span>
-  </div>
+  <div id="timer-drag-handle" style="display:none;"></div>
 
-  <!-- Resize handle (top edge when dragging within panel — separate from drag) -->
-  <div id="timer-resize-handle"
-    style="position:absolute;bottom:0;left:0;right:0;height:6px;cursor:ns-resize;z-index:10;display:flex;align-items:flex-end;justify-content:center;padding-bottom:2px;">
-    <div id="timer-resize-grip" style="width:28px;height:3px;border-radius:2px;background:var(--border2);transition:background .15s;"></div>
-  </div>
+  <div id="timer-resize-handle" style="display:none;"><div id="timer-resize-grip"></div></div>
 
-  <!-- Content -->
-  <div style="padding:10px 12px 16px;display:flex;flex-direction:column;gap:10px;flex:1;overflow:hidden;">
+  <!-- Timer Content — redesigned -->
+  <div style="padding:16px 16px 18px;display:flex;flex-direction:column;gap:12px;flex:1;overflow:hidden;">
+    <!-- Label -->
+    <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;">Timer</div>
+    <!-- Task select -->
     <select id="timer-task-select" onchange="onTimerTaskChange()"
-      style="font-size:12px;padding:5px 8px;border:.5px solid var(--border2);border-radius:7px;background:var(--bg2);color:var(--text);font-family:inherit;outline:none;cursor:pointer;width:100%;">
+      style="font-size:13px;font-weight:500;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--bg2);color:var(--text);font-family:inherit;outline:none;cursor:pointer;width:100%;box-shadow:0 1px 2px rgba(0,0,0,.04);">
       <option value="">— Select a task —</option>
     </select>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-      <div id="timer-display" style="font-size:28px;font-weight:500;color:var(--text);letter-spacing:2px;font-variant-numeric:tabular-nums;">--:--</div>
+    <!-- Display + play -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;">
+      <div id="timer-display" style="font-size:32px;font-weight:700;color:var(--text);letter-spacing:3px;font-variant-numeric:tabular-nums;">--:--</div>
       <button id="timer-play-btn" onclick="toggleTimer()" disabled
-        style="width:36px;height:36px;border-radius:50%;border:.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;cursor:pointer;">
+        style="width:42px;height:42px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;cursor:pointer;box-shadow:0 2px 8px rgba(79,126,248,.4);">
         <i class="ti ti-player-play" id="timer-play-icon"></i>
       </button>
     </div>
-    <div id="timer-progress-bar-wrap" style="height:3px;background:var(--bg3);border-radius:4px;display:none;">
-      <div id="timer-progress-bar" style="height:3px;background:var(--accent);border-radius:4px;width:100%;transition:width .5s linear;"></div>
+    <!-- Progress bar -->
+    <div id="timer-progress-bar-wrap" style="height:4px;background:var(--bg3);border-radius:4px;display:none;overflow:hidden;">
+      <div id="timer-progress-bar" style="height:4px;background:linear-gradient(90deg,var(--accent),#6b8ff7);border-radius:4px;width:100%;transition:width .5s linear;"></div>
     </div>
-    <div id="timer-est" style="font-size:11px;color:var(--text3);min-height:14px;"></div>
+    <!-- Est label -->
+    <div id="timer-est" style="font-size:12px;color:var(--text3);min-height:14px;font-weight:500;"></div>
     <!-- Add time row -->
     <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
-      <button onclick="addTimerMins(5)"  style="font-size:11px;padding:3px 7px;border:.5px solid var(--border2);border-radius:6px;background:var(--bg2);color:var(--text2);cursor:pointer;transition:background .15s;" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">+5m</button>
-      <button onclick="addTimerMins(15)" style="font-size:11px;padding:3px 7px;border:.5px solid var(--border2);border-radius:6px;background:var(--bg2);color:var(--text2);cursor:pointer;transition:background .15s;" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">+15m</button>
-      <button onclick="addTimerMins(30)" style="font-size:11px;padding:3px 7px;border:.5px solid var(--border2);border-radius:6px;background:var(--bg2);color:var(--text2);cursor:pointer;transition:background .15s;" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">+30m</button>
-      <div style="display:flex;align-items:center;gap:3px;margin-left:2px;">
+      <button onclick="addTimerMins(5)"  style="font-size:12px;font-weight:500;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='var(--bg)'">+5m</button>
+      <button onclick="addTimerMins(15)" style="font-size:12px;font-weight:500;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='var(--bg)'">+15m</button>
+      <button onclick="addTimerMins(30)" style="font-size:12px;font-weight:500;padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text2);cursor:pointer;transition:all .15s;" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='var(--bg)'">+30m</button>
+      <div style="display:flex;align-items:center;gap:4px;margin-left:2px;">
         <input id="timer-add-input" type="number" min="1" max="999" placeholder="min"
-          style="font-size:11px;padding:3px 6px;border:.5px solid var(--border2);border-radius:6px;background:var(--bg2);color:var(--text);width:50px;text-align:center;outline:none;font-family:inherit;"
+          style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);color:var(--text);width:54px;text-align:center;outline:none;font-family:inherit;"
           onkeydown="if(event.key==='Enter')addTimerMinsCustom()"/>
-        <button onclick="addTimerMinsCustom()" style="font-size:11px;padding:3px 7px;border:.5px solid var(--accent);border-radius:6px;background:var(--accent-bg);color:var(--accent-text);cursor:pointer;">+</button>
+        <button onclick="addTimerMinsCustom()" style="font-size:13px;font-weight:600;padding:5px 10px;border:1px solid var(--accent);border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;box-shadow:0 1px 4px rgba(79,126,248,.3);">+</button>
       </div>
     </div>
   </div>
@@ -1721,7 +1746,10 @@ function renderMonth(){
     const t=isToday(viewYear,viewMonth,d)?' today':'';
     const ds=dateStr(viewYear,viewMonth,d);
     const evs=eventsForDate(ds);
-    let ep=evs.slice(0,3).map(e=>`<div class="event-pill${e._scheduled?' sched-event':''}" style="background:${calColor(e.calId)}22;color:${calColor(e.calId)};border-left:2px solid ${calColor(e.calId)}">${e.startTime?e.startTime+' ':''}${e.title}</div>`).join('');
+    let ep=evs.slice(0,3).map(e=>{
+      const showTime = e.startTime && e.startTime !== '00:00';
+      return `<div class="event-pill${e._scheduled?' sched-event':''}" style="background:${calColor(e.calId)}22;color:${calColor(e.calId)};border-left:2px solid ${calColor(e.calId)}">${showTime?e.startTime+' ':''}${esc(e.title)||'(No title)'}</div>`;
+    }).join('');
     if(evs.length>3)ep+=`<div style="font-size:10px;color:var(--text3);padding:1px 4px;">+${evs.length-3} more</div>`;
     h+=`<div class="cal-cell${t}" onclick="openNewEvOnDate(event,'${ds}')"><div class="day-num" onclick="goToDay(event,${viewYear},${viewMonth},${d})" title="Go to day view">${d}</div>${ep}</div>`;
   }
