@@ -13,25 +13,62 @@
 <meta name="apple-mobile-web-app-title" content="DayCal"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Calendar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-  :root{--bg:#fff;--bg2:#f5f5f5;--bg3:#ebebeb;--border:#e0e0e0;--border2:#d0d0d0;--text:#1a1a1a;--text2:#555;--text3:#999;--accent:#4A90D9;--accent-bg:#e8f2fc;--accent-text:#1a5fa8;--danger:#E05C5C;--danger-bg:#fdecea;--sh:0 4px 16px rgba(0,0,0,.08);}
-  .dark{--bg:#1e1e1e;--bg2:#272727;--bg3:#313131;--border:#383838;--border2:#484848;--text:#f0f0f0;--text2:#aaa;--text3:#666;--accent:#5a9ee8;--accent-bg:#1a3352;--accent-text:#7ab8f5;--danger:#f07070;--danger-bg:#3a1a1a;--sh:0 4px 16px rgba(0,0,0,.4);}
+  :root{
+    --bg:#ffffff;
+    --bg2:#f7f8fa;
+    --bg3:#eef0f4;
+    --border:#e8eaed;
+    --border2:#d4d8de;
+    --text:#111827;
+    --text2:#4b5563;
+    --text3:#9ca3af;
+    --accent:#4f7ef8;
+    --accent-bg:#eef2ff;
+    --accent-text:#2d52c4;
+    --danger:#ef4444;
+    --danger-bg:#fef2f2;
+    --sh:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.08);
+    --sh-lg:0 4px 6px rgba(0,0,0,.05),0 10px 40px rgba(0,0,0,.12);
+    --radius:10px;
+    --radius-sm:7px;
+  }
+  .dark{
+    --bg:#0f1117;
+    --bg2:#1a1d27;
+    --bg3:#242736;
+    --border:#2e3347;
+    --border2:#3d4460;
+    --text:#f1f3f9;
+    --text2:#8b93b3;
+    --text3:#4a5270;
+    --accent:#6b8ff7;
+    --accent-bg:#1a2040;
+    --accent-text:#93adfb;
+    --danger:#f87171;
+    --danger-bg:#2d1515;
+    --sh:0 1px 3px rgba(0,0,0,.2),0 4px 16px rgba(0,0,0,.4);
+    --sh-lg:0 4px 6px rgba(0,0,0,.3),0 10px 40px rgba(0,0,0,.5);
+  }
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);padding:1rem;transition:background .2s,color .2s;}
-  button{cursor:pointer;border-radius:7px;transition:background .15s,color .15s,border-color .15s;font-family:inherit;}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);padding:1rem;transition:background .2s,color .2s;-webkit-font-smoothing:antialiased;}
+  button{cursor:pointer;border-radius:var(--radius-sm);transition:background .15s,color .15s,border-color .15s,box-shadow .15s;font-family:inherit;}
 
-  .nav-btn{background:var(--bg);border:0.5px solid var(--border2);color:var(--text2);font-weight:400;font-size:13px;padding:6px 12px;}
-  .nav-btn:hover{background:var(--bg2);border-color:var(--border2);color:var(--text);}
-  .dark .nav-btn{background:var(--bg);border:0.5px solid var(--border2);color:var(--text2);}
-  .dark .nav-btn:hover{background:var(--bg2);border-color:var(--border2);color:var(--text);}
+  .nav-btn{background:var(--bg);border:1px solid var(--border);color:var(--text2);font-weight:500;font-size:13px;padding:6px 12px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+  .nav-btn:hover{background:var(--bg2);border-color:var(--border2);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.08);}
+  .dark .nav-btn{background:var(--bg2);border:1px solid var(--border);color:var(--text2);}
+  .dark .nav-btn:hover{background:var(--bg3);border-color:var(--border2);color:var(--text);}
 
   /* ── Layout ── */
   .app{display:none;gap:0;}
   .app.authenticated{display:flex;}
-  .sidebar{width:220px;flex-shrink:0;border:.5px solid var(--border);border-radius:10px;padding:14px 10px;display:flex;flex-direction:column;gap:2px;margin-right:16px;background:var(--bg);align-self:stretch;}
+  .sidebar{width:230px;flex-shrink:0;border:1px solid var(--border);border-radius:14px;padding:16px 12px;display:flex;flex-direction:column;gap:2px;margin-right:16px;background:var(--bg);align-self:stretch;box-shadow:var(--sh);}
   .main{flex:1;min-width:0;display:flex;flex-direction:column;gap:20px;}
 
   /* ── Sidebar ── */
@@ -107,7 +144,7 @@
   .import-result.error{background:var(--danger-bg);color:var(--danger);}
 
   /* ── Calendar ── */
-  .event-pill{font-size:11px;padding:2px 5px;border-radius:4px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;width:100%;box-sizing:border-box;display:block;min-width:0;}
+  .event-pill{font-size:11px;font-weight:500;padding:2px 6px;border-radius:5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;width:100%;box-sizing:border-box;display:block;min-width:0;}
   .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;}
   .cal-title{font-size:18px;font-weight:500;color:var(--text);}
   .cal-nav{display:flex;align-items:center;gap:6px;}
@@ -120,8 +157,8 @@
   .view-option.active{color:var(--accent-text);font-weight:500;}
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
   .cal-day-label{text-align:center;font-size:12px;color:var(--text3);padding:6px 0;font-weight:500;}
-  .cal-cell{min-height:80px;max-height:120px;overflow:hidden;border:.5px solid var(--border);border-radius:7px;padding:6px 8px;background:var(--bg);cursor:pointer;transition:background .15s;}
-  .cal-cell:hover{background:var(--bg2);}
+  .cal-cell{min-height:90px;max-height:130px;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:7px 9px;background:var(--bg);cursor:pointer;transition:background .15s,box-shadow .15s,border-color .15s;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+  .cal-cell:hover{background:var(--bg2);border-color:var(--border2);box-shadow:0 2px 8px rgba(0,0,0,.08);}
   .cal-cell.other-month .day-num{color:var(--text3);}
   .cal-cell.today{border-color:var(--accent);}
   .cal-cell.today .day-num{background:var(--accent-bg);color:var(--accent-text);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:600;}
@@ -140,7 +177,7 @@
   /* Time grid */
   .day-grid-wrap{overflow-y:auto;max-height:640px;position:relative;}
   /* Week time-grid */
-  .week-view{border:.5px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;}
+  .week-view{border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--sh);}
   .week-header-row{display:flex;border-bottom:.5px solid var(--border2);flex-shrink:0;}
   .week-time-gutter{width:56px;flex-shrink:0;}
   .week-col-header{flex:1;padding:8px 4px;text-align:center;border-left:.5px solid var(--border);}
@@ -196,7 +233,7 @@
   .tasks-filter{display:flex;gap:4px;}
   .filter-btn{font-size:12px;padding:4px 10px;border-radius:20px;border:.5px solid transparent;background:none;color:var(--text2);}
   .filter-btn:hover{background:var(--bg2);color:var(--text);}
-  .filter-btn.active{background:var(--accent-bg);color:var(--accent-text);border-color:var(--accent);}
+  .filter-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 6px rgba(79,126,248,.3);}
   .tasks-body{padding:12px 16px;display:flex;flex-direction:column;gap:2px;}
   .task-add-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border);margin-bottom:6px;}
   .task-add-row input{flex:1;font-size:13px;border:none;background:none;color:var(--text);outline:none;font-family:inherit;}
@@ -282,7 +319,7 @@
   .ungrouped-drop.drag-over{background:var(--bg2);border-radius:7px;outline:1.5px dashed var(--border2);}
 
   /* ── Scheduling Panel ── */
-  .sched-panel{width:0;flex-shrink:0;overflow:hidden;transition:width .25s ease;border-radius:10px;background:var(--bg);border:.5px solid var(--border);margin-left:0;display:flex;flex-direction:column;align-self:stretch;}
+  .sched-panel{width:0;flex-shrink:0;overflow:hidden;transition:width .25s ease;border-radius:14px;background:var(--bg);border:1px solid var(--border);margin-left:0;display:flex;flex-direction:column;align-self:stretch;box-shadow:var(--sh);}
   .sched-panel.open{width:300px;margin-left:16px;overflow:visible;}
   .sched-panel.open .sched-panel-inner{overflow:visible;}
   #sched-timer-dock{flex-shrink:0;}
