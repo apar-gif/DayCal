@@ -22,42 +22,42 @@
 <style>
   :root{
     --bg:#ffffff;
-    --bg2:#f7f8fa;
-    --bg3:#eef0f4;
-    --border:#e8eaed;
-    --border2:#d4d8de;
-    --text:#111827;
-    --text2:#4b5563;
-    --text3:#9ca3af;
-    --accent:#4f7ef8;
-    --accent-bg:#eef2ff;
-    --accent-text:#2d52c4;
+    --bg2:#f0f2f8;
+    --bg3:#e4e8f4;
+    --border:#dde2ef;
+    --border2:#c8cfdf;
+    --text:#0d1117;
+    --text2:#3d4760;
+    --text3:#8892aa;
+    --accent:#4361ee;
+    --accent-bg:#eaedfd;
+    --accent-text:#2240c4;
     --danger:#ef4444;
     --danger-bg:#fef2f2;
-    --sh:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.08);
-    --sh-lg:0 4px 6px rgba(0,0,0,.05),0 10px 40px rgba(0,0,0,.12);
-    --radius:10px;
-    --radius-sm:7px;
+    --sh:0 1px 3px rgba(30,40,80,.07),0 4px 20px rgba(30,40,80,.10);
+    --sh-lg:0 4px 8px rgba(30,40,80,.08),0 16px 48px rgba(30,40,80,.14);
+    --radius:12px;
+    --radius-sm:8px;
   }
   .dark{
-    --bg:#0f1117;
-    --bg2:#1a1d27;
-    --bg3:#242736;
-    --border:#2e3347;
-    --border2:#3d4460;
-    --text:#f1f3f9;
-    --text2:#8b93b3;
-    --text3:#4a5270;
-    --accent:#6b8ff7;
-    --accent-bg:#1a2040;
-    --accent-text:#93adfb;
+    --bg:#0d1117;
+    --bg2:#161b27;
+    --bg3:#1e2538;
+    --border:#242d42;
+    --border2:#2e3a55;
+    --text:#e8edf8;
+    --text2:#7a89b0;
+    --text3:#3d4d6a;
+    --accent:#5b7af8;
+    --accent-bg:#141d3d;
+    --accent-text:#8fabfb;
     --danger:#f87171;
     --danger-bg:#2d1515;
-    --sh:0 1px 3px rgba(0,0,0,.2),0 4px 16px rgba(0,0,0,.4);
-    --sh-lg:0 4px 6px rgba(0,0,0,.3),0 10px 40px rgba(0,0,0,.5);
+    --sh:0 1px 3px rgba(0,0,0,.25),0 4px 20px rgba(0,0,0,.45);
+    --sh-lg:0 4px 8px rgba(0,0,0,.3),0 16px 48px rgba(0,0,0,.55);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);padding:12px 14px;transition:background .2s,color .2s;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+  body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);padding:12px 14px;transition:background .2s,color .2s;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;min-height:100vh;}
   button{cursor:pointer;border-radius:var(--radius-sm);transition:background .15s,color .15s,border-color .15s,box-shadow .15s;font-family:inherit;}
 
   .nav-btn{background:var(--bg);border:1px solid var(--border);color:var(--text2);font-weight:500;font-size:13px;padding:6px 12px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
@@ -68,11 +68,11 @@
   /* ── Layout ── */
   .app{display:none;gap:0;}
   .app.authenticated{display:flex;}
-  .sidebar{width:230px;flex-shrink:0;border:1px solid var(--border);border-radius:14px;padding:16px 12px;display:flex;flex-direction:column;gap:2px;margin-right:16px;background:var(--bg);align-self:stretch;box-shadow:var(--sh);}
+  .sidebar{width:230px;flex-shrink:0;border:1px solid var(--border);border-radius:16px;padding:0;display:flex;flex-direction:column;gap:0;margin-right:16px;background:var(--bg);align-self:stretch;box-shadow:var(--sh);overflow:hidden;}
   .main{flex:1;min-width:0;display:flex;flex-direction:column;gap:20px;}
 
   /* ── Sidebar ── */
-  .sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;margin-bottom:6px;}
+  .sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 4px;margin-bottom:4px;}
   .sidebar-title{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;}
   .cal-item{border-radius:7px;font-size:13px;color:var(--text);transition:background .15s;position:relative;}
   .cal-item-row{display:flex;align-items:center;gap:7px;padding:7px 8px;cursor:pointer;}
@@ -144,7 +144,7 @@
   .import-result.error{background:var(--danger-bg);color:var(--danger);}
 
   /* ── Calendar ── */
-  .event-pill{font-size:11px;font-weight:500;padding:2px 6px;border-radius:5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;width:100%;box-sizing:border-box;display:block;min-width:0;}
+  .event-pill{font-size:11px;font-weight:600;padding:2px 7px;border-radius:6px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;width:100%;box-sizing:border-box;display:block;min-width:0;letter-spacing:-.01em;}
   .cal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;}
   .cal-title{font-size:18px;font-weight:500;color:var(--text);}
   .cal-nav{display:flex;align-items:center;gap:6px;}
@@ -177,7 +177,7 @@
   /* Time grid */
   .day-grid-wrap{overflow-y:auto;max-height:640px;position:relative;}
   /* Week time-grid */
-  .week-view{border:1px solid var(--border);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--sh);}
+  .week-view{border:1px solid var(--border);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--sh);}
   .week-header-row{display:flex;border-bottom:.5px solid var(--border2);flex-shrink:0;}
   .week-time-gutter{width:56px;flex-shrink:0;}
   .week-col-header{flex:1;padding:8px 4px;text-align:center;border-left:.5px solid var(--border);}
@@ -319,7 +319,7 @@
   .ungrouped-drop.drag-over{background:var(--bg2);border-radius:7px;outline:1.5px dashed var(--border2);}
 
   /* ── Scheduling Panel ── */
-  .sched-panel{width:0;flex-shrink:0;overflow:hidden;transition:width .25s ease;border-radius:14px;background:var(--bg);border:1px solid var(--border);margin-left:0;display:flex;flex-direction:column;align-self:stretch;box-shadow:var(--sh);}
+  .sched-panel{width:0;flex-shrink:0;overflow:hidden;transition:width .25s ease;border-radius:16px;background:var(--bg);border:1px solid var(--border);margin-left:0;display:flex;flex-direction:column;align-self:stretch;box-shadow:var(--sh);}
   .sched-panel.open{width:300px;margin-left:16px;overflow:visible;}
   .sched-panel.open .sched-panel-inner{overflow:visible;}
   #sched-timer-dock{flex-shrink:0;}
@@ -696,6 +696,37 @@
 
   /* User bar */
   #user-bar{background:var(--bg2);border-top:1px solid var(--border);padding:10px 14px;font-size:12px;font-weight:500;}
+
+  /* ── Sidebar top accent ── */
+  .sidebar::before{content:'';display:block;height:4px;background:linear-gradient(90deg,#4361ee,#7b61ee,#ee61c4);flex-shrink:0;}
+  .sidebar .sidebar-inner{padding:12px 12px 16px;display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto;}
+
+  /* ── Nav buttons — pill style ── */
+  .nav-btn{background:var(--bg);border:1px solid var(--border);color:var(--text2);font-weight:500;font-size:13px;padding:6px 14px;box-shadow:0 1px 2px rgba(30,40,80,.05);border-radius:10px;}
+  .nav-btn:hover{background:var(--bg2);border-color:var(--border2);color:var(--text);}
+
+  /* ── Day/week event block — solid color with white text for contrast ── */
+  .day-ev-block{border-left:none!important;border-radius:9px!important;}
+
+  /* ── +N more link ── */
+  .cal-more{font-size:10px;font-weight:700;color:var(--accent);margin-top:3px;cursor:pointer;letter-spacing:.01em;}
+
+  /* ── Filter button tweaks ── */
+  .filter-btn{border-radius:8px!important;}
+
+  /* ── Schedule slot prev/next buttons ── */
+  .sched-nav-btn{font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text2);cursor:pointer;transition:all .15s;}
+  .sched-nav-btn:hover{background:var(--accent-bg);color:var(--accent-text);border-color:var(--accent);}
+
+  /* ── Sched card ── */
+  .sched-card{transition:box-shadow .2s,transform .1s;}
+  .sched-card:hover{box-shadow:0 4px 16px rgba(67,97,238,.12)!important;transform:translateY(-1px);}
+
+  /* ── Mobile subtabs ── */
+  .mobile-subtab.active{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important;}
+
+  /* ── Dark mode body bg ── */
+  .dark body,.dark{background:var(--bg2);}
 </style>
 </head>
 <body>
