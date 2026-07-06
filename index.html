@@ -2298,6 +2298,7 @@ function schedSkipSlot(dir) {
 function renderSchedBody() {
   const body = document.getElementById('sched-body');
   if (!body) return;
+  const savedScroll = body.scrollTop; // preserve scroll position
   ensureTaskFields();
   if (schedSlots.length === 0 || schedSlotIndex >= schedSlots.length) {
     body.innerHTML = `<div class="sched-empty"><i class="ti ti-calendar-off"></i>No free slots this week.</div>`;
@@ -2305,6 +2306,7 @@ function renderSchedBody() {
   }
   if (schedTab === 'manual') renderManualTab(body);
   else renderAutoTab(body);
+  body.scrollTop = savedScroll; // restore scroll position
 }
 
 // ─── MANUAL TAB ───
