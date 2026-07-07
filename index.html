@@ -4509,7 +4509,14 @@ function mobileNav(tab) {
   if (tab === 'cal') {
     if (calSection) calSection.style.display = '';
   } else if (tab === 'tasks') {
-    if (tasksSection) tasksSection.style.display = '';
+    if (tasksSection) {
+      tasksSection.style.display = '';
+      // Force scroll on tasks section directly
+      tasksSection.style.overflowY = 'scroll';
+      tasksSection.style.webkitOverflowScrolling = 'touch';
+      tasksSection.style.height = (window.innerHeight - 120) + 'px';
+      tasksSection.style.maxHeight = (window.innerHeight - 120) + 'px';
+    }
   } else if (tab === 'sidebar') {
     // Show sidebar fullscreen with no close button — consistent with tab layout
     if (sidebar) sidebar.classList.add('mobile-open');
