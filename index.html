@@ -4150,8 +4150,11 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       render(); renderSidebar(); renderTasks();
       showUserBar();
       if (typeof isMobile === 'function' && isMobile()) {
-        // Small delay ensures render() has completed before switching to mobile layout
-        requestAnimationFrame(() => mobileNav('cal'));
+        requestAnimationFrame(() => {
+          mobileNav('cal');
+          // Recalculate height now that nav is visible
+          if (typeof fixMobileHeight === 'function') fixMobileHeight();
+        });
       }
     };
     if (document.readyState === 'loading') {
@@ -4611,6 +4614,18 @@ window.addEventListener('resize', () => {
 // Init mobile nav on load
 if (isMobile()) {
   mobileNav('cal');
+  // Set main height to fill screen minus bottom nav (56px)
+  function fixMobileHeight() {
+    const app = document.getElementById('app');
+    const main = document.querySelector('.main');
+    const nav = document.getElementById('mobile-nav');
+    if (!app || !main) return;
+    const navH = nav ? nav.offsetHeight : 56;
+    app.style.height = (window.innerHeight - navH) + 'px';
+    app.style.maxHeight = (window.innerHeight - navH) + 'px';
+  }
+  fixMobileHeight();
+  window.addEventListener('resize', fixMobileHeight);
 }
 
 
