@@ -549,8 +549,8 @@
       overflow:hidden;padding:0;
       display:flex!important;
     }
-    /* Only main content scrolls, fills remaining height */
-    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;max-height:100%;padding:0;}
+    /* Only main content scrolls, fills remaining height between header and bottom nav */
+    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;height:0;padding:0;}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
     /* Popovers/dialogs — never exceed viewport width */
@@ -567,7 +567,7 @@
     .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:56px;z-index:400;width:100%;border-radius:0;margin:0;overflow-y:auto;padding-bottom:8px;}
 
     /* Main takes full width */
-    .main{gap:12px;}
+    .main{gap:8px;}
 
     /* Calendar header — compact */
     .cal-header{flex-wrap:wrap;gap:6px;margin-bottom:.75rem;}
