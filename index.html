@@ -538,8 +538,11 @@
      MOBILE RESPONSIVE (phones ≤ 768px)
   ══════════════════════════════════════════════════════════ */
   @media (max-width: 768px) {
-    html{overflow-x:hidden;overflow-y:hidden;overscroll-behavior:none;}
-    body{padding:0!important;margin:0;overflow:hidden;width:100vw;min-height:unset!important;}
+    html{overflow-x:hidden;overflow-y:hidden;overscroll-behavior:none;background:#fff;}
+    body{padding:0!important;margin:0;overflow:hidden;width:100vw;min-height:unset!important;background:#fff!important;
+      padding-top:env(safe-area-inset-top)!important;
+      padding-top:max(env(safe-area-inset-top), 12px)!important;
+    }
 
     /* App — natural height, no forced stretching */
     .app.authenticated{
