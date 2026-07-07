@@ -552,7 +552,7 @@
       display:flex!important;
     }
     /* Main scrolls naturally */
-    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;padding-bottom:72px;}
+    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;padding-bottom:calc(56px + max(env(safe-area-inset-bottom),16px) + 8px);}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
     /* Popovers/dialogs — never exceed viewport width */
@@ -566,7 +566,7 @@
 
     /* Hide sidebar — shown via bottom sheet instead */
     .sidebar{display:none;}
-    .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:56px;z-index:400;width:100%;border-radius:0;margin:0;overflow-y:auto;padding-bottom:8px;}
+    .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:calc(56px + max(env(safe-area-inset-bottom),16px));z-index:400;width:100%;border-radius:0;margin:0;overflow-y:auto;padding-bottom:16px;}
 
     /* Main takes full width */
     .main{gap:8px;}
@@ -587,7 +587,7 @@
     /* Tasks section — full width below calendar */
     .tasks-section{border-radius:10px;}
     /* Add bottom padding so content doesn't hide behind fixed nav */
-    .main{padding-bottom:72px!important;}
+    .main{padding-bottom:calc(56px + max(env(safe-area-inset-bottom),16px) + 8px)!important;}
 
     /* Timer — smaller on mobile */
     #timer-block{width:170px!important;}
@@ -601,7 +601,7 @@
   .mobile-nav-btn i{font-size:20px;}
 
   @media (max-width: 768px) {
-    body{padding-bottom:64px;}
+    body{padding-bottom:calc(56px + max(env(safe-area-inset-bottom),16px));}
     .mobile-nav{display:flex;}
 
     /* Week view on mobile — tighter columns, smaller text to avoid forced horizontal scroll */
@@ -667,7 +667,7 @@
 
   /* Mobile timer panel — full screen content area */
   @media (max-width: 768px) {
-    .mobile-timer-panel{display:none;position:fixed;top:0;left:0;right:0;bottom:56px;background:var(--bg);z-index:300;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;padding:0;overflow-y:auto;}
+    .mobile-timer-panel{display:none;position:fixed;top:0;left:0;right:0;bottom:calc(56px + max(env(safe-area-inset-bottom),16px));background:var(--bg);z-index:300;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;padding:0;overflow-y:auto;}
     .mobile-timer-panel.active{display:flex;}
     .mobile-timer-panel #timer-block{position:relative!important;left:auto!important;bottom:auto!important;top:auto!important;width:100%!important;max-width:100%!important;height:100%!important;max-height:none!important;min-height:calc(100vh - 56px)!important;border-radius:0!important;border:none!important;box-shadow:none!important;flex:1;}
   }
