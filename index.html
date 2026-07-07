@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="DayCal"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 <title>Calendar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -57,6 +57,7 @@
     --sh-lg:0 4px 8px rgba(0,0,0,.3),0 16px 48px rgba(0,0,0,.55);
   }
   *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;max-height:100%;}
   body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);padding:12px 14px;transition:background .2s,color .2s;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;min-height:100vh;}
   button{cursor:pointer;border-radius:var(--radius-sm);transition:background .15s,color .15s,border-color .15s,box-shadow .15s;font-family:inherit;}
 
@@ -538,11 +539,11 @@
      MOBILE RESPONSIVE (phones ≤ 768px)
   ══════════════════════════════════════════════════════════ */
   @media (max-width: 768px) {
-    body{padding:.5rem;overflow-x:hidden;}
-    html{overflow-x:hidden;}
+    html,body{overflow:hidden;height:100%;height:100dvh;padding:0;margin:0;}
+    body{padding:0;overflow:hidden;position:fixed;width:100%;height:100%;height:100dvh;}
 
-    /* Stack layout vertically */
-    .app{flex-direction:column;gap:0;max-width:100vw;}
+    /* Stack layout vertically — full screen fixed */
+    .app{flex-direction:column;gap:0;max-width:100vw;width:100%;height:100%;height:100dvh;position:fixed;top:0;left:0;overflow:hidden;}
 
     /* Popovers/dialogs — never exceed viewport width */
     .new-ev-popover{width:calc(100vw - 24px)!important;max-width:340px;}
@@ -575,6 +576,9 @@
 
     /* Tasks section — full width below calendar */
     .tasks-section{border-radius:10px;}
+    /* Main content area — scrollable, not the body */
+    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;padding-bottom:64px;}
+    .cal-section{border-radius:10px;}
 
     /* Timer — smaller on mobile */
     #timer-block{width:170px!important;}
@@ -4140,7 +4144,9 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       await loadFromSupabase();
       render(); renderSidebar(); renderTasks();
       showUserBar();
-      if (typeof isMobile === 'function' && isMobile()) mobileNav('cal');
+      if (typeof isMobile === 'function' && isMobile()) {
+        mobileNav('cal');
+      }
     };
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', run);
@@ -4598,7 +4604,13 @@ window.addEventListener('resize', () => {
 
 // Init mobile nav on load
 if (isMobile()) {
-  mobileNav('cal');
+  // Hide desktop layout sections immediately to prevent flash
+  const mainEl = document.querySelector('.main');
+  const sidebarEl = document.querySelector('.sidebar');
+  const tasksEl = document.querySelector('.tasks-section');
+  if (mainEl) mainEl.style.display = 'none';
+  if (sidebarEl) sidebarEl.style.display = 'none';
+  // mobileNav will show the right sections after auth
 }
 
 
