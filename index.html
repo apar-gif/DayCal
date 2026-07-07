@@ -539,17 +539,18 @@
   ══════════════════════════════════════════════════════════ */
   @media (max-width: 768px) {
     html{overflow-x:hidden;overflow-y:hidden;overscroll-behavior:none;}
-    body{padding:0!important;margin:0;overflow-x:hidden;overflow-y:hidden;height:100dvh;height:100vh;width:100vw;}
+    body{padding:0!important;margin:0;overflow:hidden;height:100dvh;height:100vh;max-height:100dvh;max-height:100vh;width:100vw;min-height:unset!important;}
 
     /* Stack layout vertically — fill screen, no overflow */
     .app.authenticated{
       flex-direction:column;gap:0;
       width:100vw;height:100dvh;height:100vh;
-      overflow:hidden;
-      padding:0;
+      max-height:100dvh;max-height:100vh;
+      overflow:hidden;padding:0;
+      display:flex!important;
     }
-    /* Only main content scrolls */
-    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;padding:8px 8px 0;}
+    /* Only main content scrolls, fills remaining height */
+    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;max-height:100%;padding:0;}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
     /* Popovers/dialogs — never exceed viewport width */
