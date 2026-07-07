@@ -538,6 +538,7 @@
      MOBILE RESPONSIVE (phones ≤ 768px)
   ══════════════════════════════════════════════════════════ */
   @media (max-width: 768px) {
+    :root{--mobile-nav-h:calc(56px + max(env(safe-area-inset-bottom), 16px));}
     html{overflow-x:hidden;overflow-y:hidden;overscroll-behavior:none;background:#fff;}
     body{padding:0!important;margin:0;overflow:hidden;width:100vw;min-height:unset!important;background:#fff!important;
       padding-top:env(safe-area-inset-top)!important;
@@ -552,7 +553,7 @@
       display:flex!important;
     }
     /* Main scrolls naturally */
-    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;padding-bottom:calc(56px + max(env(safe-area-inset-bottom),16px) + 8px);}
+    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;padding-bottom:calc(var(--mobile-nav-h) + 8px);}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
     /* Popovers/dialogs — never exceed viewport width */
@@ -566,7 +567,7 @@
 
     /* Hide sidebar — shown via bottom sheet instead */
     .sidebar{display:none;}
-    .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:calc(56px + max(env(safe-area-inset-bottom),16px));z-index:400;width:100%;border-radius:0;margin:0;overflow-y:auto;padding-bottom:16px;}
+    .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:120px;z-index:400;width:100%;border-radius:0;margin:0;overflow-y:scroll;-webkit-overflow-scrolling:touch;padding-bottom:16px;}
 
     /* Main takes full width */
     .main{gap:8px;}
@@ -587,7 +588,7 @@
     /* Tasks section — full width below calendar */
     .tasks-section{border-radius:10px;}
     /* Add bottom padding so content doesn't hide behind fixed nav */
-    .main{padding-bottom:calc(56px + max(env(safe-area-inset-bottom),16px) + 8px)!important;}
+    .main{padding-bottom:calc(var(--mobile-nav-h) + 8px)!important;}
 
     /* Timer — smaller on mobile */
     #timer-block{width:170px!important;}
@@ -601,7 +602,7 @@
   .mobile-nav-btn i{font-size:20px;}
 
   @media (max-width: 768px) {
-    body{padding-bottom:calc(56px + max(env(safe-area-inset-bottom),16px));}
+    body{padding-bottom:var(--mobile-nav-h);}
     .mobile-nav{display:flex;}
 
     /* Week view on mobile — tighter columns, smaller text to avoid forced horizontal scroll */
@@ -667,7 +668,7 @@
 
   /* Mobile timer panel — full screen content area */
   @media (max-width: 768px) {
-    .mobile-timer-panel{display:none;position:fixed;top:0;left:0;right:0;bottom:calc(56px + max(env(safe-area-inset-bottom),16px));background:var(--bg);z-index:300;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;padding:0;overflow-y:auto;}
+    .mobile-timer-panel{display:none;position:fixed;top:0;left:0;right:0;bottom:var(--mobile-nav-h);background:var(--bg);z-index:300;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;padding:0;overflow-y:auto;}
     .mobile-timer-panel.active{display:flex;}
     .mobile-timer-panel #timer-block{position:relative!important;left:auto!important;bottom:auto!important;top:auto!important;width:100%!important;max-width:100%!important;height:100%!important;max-height:none!important;min-height:calc(100vh - 56px)!important;border-radius:0!important;border:none!important;box-shadow:none!important;flex:1;}
   }
@@ -712,7 +713,7 @@
 
   /* ── Sidebar top accent ── */
   .sidebar::before{content:'';display:block;height:4px;background:linear-gradient(90deg,#4361ee,#7b61ee,#ee61c4);flex-shrink:0;}
-  .sidebar .sidebar-inner{padding:12px 12px 16px;display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto;}
+  .sidebar .sidebar-inner{padding:12px 12px 16px;display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 
   /* ── Nav buttons — pill style ── */
   .nav-btn{background:var(--bg);border:1px solid var(--border);color:var(--text2);font-weight:500;font-size:13px;padding:6px 14px;box-shadow:0 1px 2px rgba(30,40,80,.05);border-radius:10px;}
