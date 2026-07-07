@@ -555,6 +555,7 @@
     /* Main scrolls naturally */
     .main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;padding-bottom:calc(var(--mobile-nav-h) + 8px);}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
+    .tasks-section{overflow-y:auto!important;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 180px);}
 
     /* Popovers/dialogs — never exceed viewport width */
     .new-ev-popover{width:calc(100vw - 24px)!important;max-width:340px;}
