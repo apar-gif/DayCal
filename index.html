@@ -541,17 +541,15 @@
     html{overflow-x:hidden;overflow-y:hidden;overscroll-behavior:none;}
     body{padding:0!important;margin:0;overflow:hidden;height:100dvh;height:100vh;max-height:100dvh;max-height:100vh;width:100vw;min-height:unset!important;}
 
-    /* App fills screen, nav sits on top via fixed positioning */
+    /* App — natural height, no forced stretching */
     .app.authenticated{
       flex-direction:column;gap:0;
       width:100vw;
-      height:calc(100vh - 56px);
-      height:calc(100dvh - 56px);
       overflow:hidden;padding:0;
       display:flex!important;
     }
-    /* Only main scrolls */
-    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;height:0;padding:0;}
+    /* Main scrolls naturally */
+    .main{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0;padding-bottom:72px;}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
     /* Popovers/dialogs — never exceed viewport width */
@@ -585,6 +583,8 @@
 
     /* Tasks section — full width below calendar */
     .tasks-section{border-radius:10px;}
+    /* Add bottom padding so content doesn't hide behind fixed nav */
+    .main{padding-bottom:72px!important;}
 
     /* Timer — smaller on mobile */
     #timer-block{width:170px!important;}
