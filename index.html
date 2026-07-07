@@ -541,15 +541,16 @@
     html{overflow-x:hidden;overflow-y:hidden;overscroll-behavior:none;}
     body{padding:0!important;margin:0;overflow:hidden;height:100dvh;height:100vh;max-height:100dvh;max-height:100vh;width:100vw;min-height:unset!important;}
 
-    /* Stack layout vertically — fill screen, no overflow */
+    /* App fills screen, nav sits on top via fixed positioning */
     .app.authenticated{
       flex-direction:column;gap:0;
-      width:100vw;height:100dvh;height:100vh;
-      max-height:100dvh;max-height:100vh;
+      width:100vw;
+      height:calc(100vh - 56px);
+      height:calc(100dvh - 56px);
       overflow:hidden;padding:0;
       display:flex!important;
     }
-    /* Only main content scrolls, fills remaining height between header and bottom nav */
+    /* Only main scrolls */
     .main{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;min-height:0;height:0;padding:0;}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
@@ -4152,8 +4153,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       if (typeof isMobile === 'function' && isMobile()) {
         requestAnimationFrame(() => {
           mobileNav('cal');
-          // Recalculate height now that nav is visible
-          if (typeof fixMobileHeight === 'function') fixMobileHeight();
+
         });
       }
     };
@@ -4614,18 +4614,7 @@ window.addEventListener('resize', () => {
 // Init mobile nav on load
 if (isMobile()) {
   mobileNav('cal');
-  // Set main height to fill screen minus bottom nav (56px)
-  function fixMobileHeight() {
-    const app = document.getElementById('app');
-    const main = document.querySelector('.main');
-    const nav = document.getElementById('mobile-nav');
-    if (!app || !main) return;
-    const navH = nav ? nav.offsetHeight : 56;
-    app.style.height = (window.innerHeight - navH) + 'px';
-    app.style.maxHeight = (window.innerHeight - navH) + 'px';
-  }
-  fixMobileHeight();
-  window.addEventListener('resize', fixMobileHeight);
+
 }
 
 
