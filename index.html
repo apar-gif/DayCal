@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="DayCal"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
 <title>Calendar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -69,7 +69,7 @@
   .app{display:none;gap:0;}
   .app.authenticated{display:flex;}
   .sidebar{width:230px;flex-shrink:0;border:1px solid var(--border);border-radius:16px;padding:0;display:flex;flex-direction:column;gap:0;margin-right:16px;background:var(--bg);align-self:stretch;box-shadow:var(--sh);overflow:hidden;}
-  .main{flex:1;min-width:0;display:flex;flex-direction:column;gap:20px;}
+  .main{flex:1;min-width:0;max-width:100%;display:flex;flex-direction:column;gap:20px;overflow-x:hidden;}
 
   /* ── Sidebar ── */
   .sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 4px;margin-bottom:4px;}
@@ -155,9 +155,9 @@
   .view-option{padding:9px 16px;font-size:14px;cursor:pointer;color:var(--text);display:flex;align-items:center;gap:10px;background:none;border:none;border-radius:0;width:100%;font-family:inherit;}
   .view-option:hover{background:var(--bg2);}
   .view-option.active{color:var(--accent-text);font-weight:500;}
-  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;width:100%;}
   .cal-day-label{text-align:center;font-size:12px;color:var(--text3);padding:6px 0;font-weight:500;}
-  .cal-cell{min-height:90px;max-height:130px;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:7px 9px;background:var(--bg);cursor:pointer;transition:background .15s,box-shadow .15s,border-color .15s;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+  .cal-cell{min-height:56px;max-height:130px;min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:10px;padding:7px 9px;background:var(--bg);cursor:pointer;transition:background .15s,box-shadow .15s,border-color .15s;box-shadow:0 1px 2px rgba(0,0,0,.04);}
   .cal-cell:hover{background:var(--bg2);border-color:var(--border2);box-shadow:0 2px 8px rgba(0,0,0,.08);}
   .cal-cell.other-month .day-num{color:var(--text3);}
   .cal-cell.today{border-color:var(--accent);}
