@@ -553,7 +553,7 @@
       display:flex!important;
     }
     /* Main scrolls naturally */
-    .main{overflow-y:scroll;-webkit-overflow-scrolling:touch;padding:0;padding-bottom:calc(var(--mobile-nav-h) + 8px);height:calc(100vh - max(env(safe-area-inset-top),12px));max-height:calc(100vh - max(env(safe-area-inset-top),12px));}
+    .main{overflow-y:visible;padding:0;}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
     /* Popovers/dialogs — never exceed viewport width */
@@ -586,7 +586,7 @@
     .week-cols-wrap{height:1152px!important;}
 
     /* Tasks section — full width below calendar */
-    .tasks-section{border-radius:0!important;border-left:none!important;border-right:none!important;box-shadow:none!important;overflow:visible!important;}
+    .tasks-section{border-radius:0!important;border-left:none!important;border-right:none!important;box-shadow:none!important;overflow-y:scroll!important;-webkit-overflow-scrolling:touch!important;height:calc(100vh - max(env(safe-area-inset-top),12px) - var(--mobile-nav-h) - 60px)!important;max-height:none!important;}
     /* Add bottom padding so content doesn't hide behind fixed nav */
     .main{padding-bottom:calc(var(--mobile-nav-h) + 8px)!important;}
 
