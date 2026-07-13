@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DayCal — Privacy Policy & Terms of Service</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
+  <style>
+    :root {
+      --accent: #4361ee;
+      --text: #0d1117;
+      --text2: #3d4760;
+      --text3: #8892aa;
+      --border: #dde2ef;
+      --bg: #ffffff;
+      --bg2: #f0f2f8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg2);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      padding: 0 0 80px;
+    }
+    header {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .logo {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -.03em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+    }
+    .logo span {
+      background: linear-gradient(135deg, #4361ee, #7b61ee);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .back-btn {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 6px 14px;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      transition: all .15s;
+    }
+    .back-btn:hover { background: var(--accent); color: #fff; }
+
+    .container {
+      max-width: 780px;
+      margin: 40px auto;
+      padding: 0 24px;
+    }
+    .doc-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 48px;
+      box-shadow: 0 1px 3px rgba(30,40,80,.07), 0 4px 20px rgba(30,40,80,.08);
+      margin-bottom: 32px;
+    }
+    .doc-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -.03em;
+      margin-bottom: 6px;
+    }
+    .doc-meta {
+      font-size: 13px;
+      color: var(--text3);
+      margin-bottom: 36px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 28px 0 10px;
+      letter-spacing: -.01em;
+    }
+    h2:first-of-type { margin-top: 0; }
+    p {
+      font-size: 14px;
+      line-height: 1.75;
+      color: var(--text2);
+      margin-bottom: 12px;
+    }
+    ul {
+      font-size: 14px;
+      line-height: 1.75;
+      color: var(--text2);
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+    li { margin-bottom: 4px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .highlight-box {
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 20px 0;
+      font-size: 14px;
+      color: #2d52c4;
+      line-height: 1.6;
+    }
+    .highlight-box strong { font-weight: 700; }
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 32px 0;
+    }
+    .contact-box {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-top: 24px;
+    }
+    .contact-box p { margin: 0; }
+    @media (max-width: 600px) {
+      .doc-card { padding: 28px 20px; }
+      .doc-title { font-size: 22px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a class="logo" href="https://apar-gif.github.io/DayCal">
+    📅 <span>DayCal</span>
+  </a>
+  <a class="back-btn" href="https://apar-gif.github.io/DayCal">← Back to App</a>
+</header>
+
+<div class="container">
+
+  <!-- PRIVACY POLICY -->
+  <div class="doc-card">
+    <div class="doc-title">Privacy Policy</div>
+    <div class="doc-meta">Last updated: July 8, 2026 &nbsp;·&nbsp; Effective immediately</div>
+
+    <div class="highlight-box">
+      <strong>Summary:</strong> DayCal does not sell your data. We only access the Google Calendar data you explicitly authorize, and we store it securely in your personal account. You can revoke access at any time.
+    </div>
+
+    <h2>1. Who We Are</h2>
+    <p>DayCal ("we", "us", "our") is a personal calendar and task management application available at <a href="https://apar-gif.github.io/DayCal">https://apar-gif.github.io/DayCal</a>. This Privacy Policy explains how we collect, use, and protect your information.</p>
+
+    <h2>2. Information We Collect</h2>
+    <p>We collect and store the following types of information:</p>
+    <ul>
+      <li><strong>Account information:</strong> Your email address and password (hashed) when you sign up, stored securely via Supabase.</li>
+      <li><strong>Calendar data:</strong> Events you create directly in DayCal, including titles, dates, times, locations, and recurrence rules.</li>
+      <li><strong>Task data:</strong> Tasks, groups, time estimates, and scheduling information you enter.</li>
+      <li><strong>Google Calendar data:</strong> If you choose to sync with Google Calendar, we access and import your Google Calendar events with your explicit permission. See Section 4 for full details.</li>
+    </ul>
+
+    <h2>3. How We Use Your Information</h2>
+    <p>We use the information we collect solely to:</p>
+    <ul>
+      <li>Display your calendar events and tasks within the app</li>
+      <li>Enable AI-powered scheduling suggestions based on your free time slots</li>
+      <li>Sync imported Google Calendar events to your personal DayCal storage</li>
+      <li>Authenticate your identity and maintain your session</li>
+    </ul>
+    <p>We do <strong>not</strong> use your data for advertising, sell it to third parties, or share it with anyone except as described in this policy.</p>
+
+    <h2>4. Google Calendar Integration & Use of Google User Data</h2>
+    <p>DayCal integrates with the Google Calendar API to allow you to import your Google Calendar events. This integration is entirely optional.</p>
+    <p><strong>What we access:</strong> When you click "Sync Google Calendar" and authorize the connection, we request the following OAuth scopes:</p>
+    <ul>
+      <li><code>https://www.googleapis.com/auth/calendar.readonly</code> — Read-only access to your Google Calendar events</li>
+      <li><code>https://www.googleapis.com/auth/userinfo.email</code> — Your Google account email address (used to label which Google account the calendars came from)</li>
+    </ul>
+    <p><strong>What we do with it:</strong></p>
+    <ul>
+      <li>We fetch your calendar list and events within a defined date range (approximately 2 months back to 1 year ahead)</li>
+      <li>We store imported events in <strong>your personal Supabase database account</strong> — not in any shared or central database</li>
+      <li>Your Google data is only visible to you when signed in to your DayCal account</li>
+      <li>We do <strong>not</strong> write, modify, or delete any events in your Google Calendar — access is strictly read-only</li>
+      <li>We do <strong>not</strong> share your Google Calendar data with any third parties</li>
+      <li>We do <strong>not</strong> use your Google Calendar data for advertising or analytics</li>
+      <li>Your Google OAuth access token is used only during the active sync session and is never stored permanently</li>
+    </ul>
+    <p><strong>Revoking access:</strong> You can revoke DayCal's access to your Google Calendar at any time by visiting <a href="https://myaccount.google.com/permissions" target="_blank">myaccount.google.com/permissions</a> and removing DayCal from the list of connected apps.</p>
+    <p>DayCal's use of Google user data complies with the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+    <h2>5. Data Storage & Security</h2>
+    <p>Your data is stored using <a href="https://supabase.com" target="_blank">Supabase</a>, a secure cloud database platform. All data is protected by:</p>
+    <ul>
+      <li>Row-Level Security (RLS) policies — only you can access your own data</li>
+      <li>Encrypted connections (HTTPS/TLS) for all data in transit</li>
+      <li>Secure authentication via email and password (bcrypt-hashed)</li>
+    </ul>
+
+    <h2>6. Data Retention</h2>
+    <p>Your data is retained as long as your account exists. You may request deletion of your account and all associated data by contacting us at the email below. Imported Google Calendar events can be removed by deleting the associated calendars within the app.</p>
+
+    <h2>7. Children's Privacy</h2>
+    <p>DayCal is not directed at children under the age of 13. We do not knowingly collect personal information from children under 13.</p>
+
+    <h2>8. Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. We will notify users of significant changes by updating the "Last updated" date at the top of this page. Continued use of DayCal after changes constitutes acceptance of the updated policy.</p>
+
+    <h2>9. Contact Us</h2>
+    <div class="contact-box">
+      <p>If you have questions about this Privacy Policy or how we handle your data, please contact us at:<br/>
+      <strong>Email:</strong> <a href="mailto:adi.paradkar007@gmail.com">adi.paradkar007@gmail.com</a></p>
+    </div>
+  </div>
+
+  <!-- TERMS OF SERVICE -->
+  <div class="doc-card">
+    <div class="doc-title">Terms of Service</div>
+    <div class="doc-meta">Last updated: July 8, 2026 &nbsp;·&nbsp; Effective immediately</div>
+
+    <h2>1. Acceptance of Terms</h2>
+    <p>By accessing or using DayCal ("the Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use the Service.</p>
+
+    <h2>2. Description of Service</h2>
+    <p>DayCal is a web-based personal calendar and task management application. It allows users to create and manage calendar events, tasks, and optionally sync with Google Calendar. The Service is provided free of charge.</p>
+
+    <h2>3. User Accounts</h2>
+    <p>To use DayCal, you must create an account with a valid email address and password. You are responsible for:</p>
+    <ul>
+      <li>Maintaining the confidentiality of your account credentials</li>
+      <li>All activities that occur under your account</li>
+      <li>Notifying us immediately of any unauthorized use of your account</li>
+    </ul>
+
+    <h2>4. Acceptable Use</h2>
+    <p>You agree not to use DayCal to:</p>
+    <ul>
+      <li>Violate any applicable laws or regulations</li>
+      <li>Attempt to gain unauthorized access to other users' data</li>
+      <li>Interfere with or disrupt the Service or its infrastructure</li>
+      <li>Use automated tools to scrape or abuse the Service</li>
+    </ul>
+
+    <h2>5. Google Calendar Integration</h2>
+    <p>If you choose to connect your Google Calendar, you grant DayCal permission to access your Google Calendar data as described in our Privacy Policy. You acknowledge that:</p>
+    <ul>
+      <li>DayCal accesses Google Calendar data in read-only mode</li>
+      <li>You can revoke this access at any time via your Google Account settings</li>
+      <li>DayCal is not affiliated with or endorsed by Google</li>
+    </ul>
+
+    <h2>6. Intellectual Property</h2>
+    <p>The DayCal application, including its design, code, and content, is owned by the developer. Your calendar and task data remains your own property at all times.</p>
+
+    <h2>7. Disclaimer of Warranties</h2>
+    <p>DayCal is provided "as is" without warranties of any kind, either express or implied. We do not guarantee that the Service will be uninterrupted, error-free, or completely secure.</p>
+
+    <h2>8. Limitation of Liability</h2>
+    <p>To the fullest extent permitted by law, DayCal shall not be liable for any indirect, incidental, special, consequential, or punitive damages resulting from your use of or inability to use the Service.</p>
+
+    <h2>9. Termination</h2>
+    <p>We reserve the right to terminate or suspend your account at our discretion if you violate these Terms of Service. You may also delete your account at any time by contacting us.</p>
+
+    <h2>10. Changes to Terms</h2>
+    <p>We may update these Terms of Service from time to time. Continued use of DayCal after changes constitutes acceptance of the updated terms.</p>
+
+    <h2>11. Governing Law</h2>
+    <p>These Terms shall be governed by and construed in accordance with the laws of the State of California, United States, without regard to its conflict of law provisions.</p>
+
+    <h2>12. Contact</h2>
+    <div class="contact-box">
+      <p>For questions about these Terms of Service, contact us at:<br/>
+      <strong>Email:</strong> <a href="mailto:adi.paradkar007@gmail.com">adi.paradkar007@gmail.com</a></p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
