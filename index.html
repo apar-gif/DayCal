@@ -71,6 +71,18 @@
   .sidebar{width:230px;flex-shrink:0;border:1px solid var(--border);border-radius:16px;padding:0;display:flex;flex-direction:column;gap:0;margin-right:16px;background:var(--bg);align-self:stretch;box-shadow:var(--sh);overflow:hidden;}
   .main{flex:1;min-width:0;max-width:100%;display:flex;flex-direction:column;gap:20px;overflow-x:hidden;}
 
+  /* ── Desktop side-by-side layout: calendar left, tasks right rail ── */
+  @media (min-width: 769px) {
+    .main{flex-direction:row;gap:16px;align-items:stretch;}
+    .main > .cal-section{flex:1;min-width:0;display:flex;flex-direction:column;}
+    .main > .cal-section #cal-body{flex:1;min-height:0;}
+    .main > .tasks-section{width:300px;flex-shrink:0;display:flex;flex-direction:column;align-self:stretch;max-height:calc(100vh - 32px);}
+    .main > .tasks-section .tasks-body{flex:1;overflow-y:auto;min-height:0;}
+    .main > .tasks-section .tasks-header{flex-wrap:wrap;gap:8px;}
+    /* Tasks header actions wrap nicely in narrow rail */
+    .tasks-section .tasks-header-actions{flex-wrap:wrap;}
+  }
+
   /* ── Sidebar ── */
   .sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 4px;margin-bottom:4px;}
   .sidebar-title{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;}
@@ -4416,6 +4428,48 @@ async function dbDeleteGroup(group) {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
 
+  // ═══ PREVIEW MODE — skips auth for layout testing only ═══
+  // Add ?preview=1 to the URL to bypass sign-in. Uses fake in-memory data,
+  // does NOT connect to Supabase. REMOVE THIS BLOCK BEFORE DEPLOYING.
+  if (params.get('preview') === '1' || window.location.href.indexOf('preview=1') !== -1) {
+    try {
+      _confirmingEmail = true;
+      _supaUser = { id: 'preview-user' };
+      calendars = [
+        { id: 'c1', name: 'Personal', color: '#4361ee', visible: true },
+        { id: 'c2', name: 'Work', color: '#ef4444', visible: true },
+        { id: 'c3', name: 'Fitness', color: '#10b981', visible: true },
+      ];
+      const _t = new Date();
+      const _iso = (d) => d.toISOString().slice(0,10);
+      events = [
+        { id:'e1', calId:'c1', title:'Sleep', date:_iso(_t), startTime:'23:00', endTime:'07:00' },
+        { id:'e2', calId:'c2', title:'Team standup', date:_iso(_t), startTime:'10:00', endTime:'10:30' },
+        { id:'e3', calId:'c3', title:'Squash practice', date:_iso(_t), startTime:'17:00', endTime:'18:30' },
+        { id:'e4', calId:'c1', title:'Dinner', date:_iso(_t), startTime:'19:00', endTime:'20:00' },
+      ];
+      tasks = [
+        { id:'t1', title:'Finish personal statement', estMins:90, timeLeftMins:90, priority:'high', done:false, groupId:null, due:_iso(_t) },
+        { id:'t2', title:'PIQ Questions', estMins:50, timeLeftMins:50, priority:'medium', done:false, groupId:null },
+        { id:'t3', title:'Match prep notes', estMins:30, timeLeftMins:30, priority:'low', done:false, groupId:null },
+        { id:'t4', title:'Read chapter 5', estMins:45, timeLeftMins:45, priority:'medium', done:false, groupId:null },
+      ];
+      groups = [];
+    } catch(e) { console.error('preview seed error', e); }
+    const authOverlay = document.getElementById('auth-overlay');
+    const appEl = document.getElementById('app');
+    if (authOverlay) authOverlay.style.display = 'none';
+    if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = 'visible'; appEl.style.opacity = '1'; appEl.style.display = 'flex'; }
+    try { renderSidebar(); } catch(e) { console.error('renderSidebar', e); }
+    try { render(); } catch(e) { console.error('render', e); }
+    try { renderTasks(); } catch(e) { console.error('renderTasks', e); }
+    if (typeof isMobile === 'function' && isMobile()) {
+      requestAnimationFrame(() => { try { mobileNav('cal'); } catch(e){} });
+    }
+    return;
+  }
+  // ═══ END PREVIEW MODE ═══
+
   // Helper — show sign-in screen cleanly
   function showSignIn(message, isError) {
     window.history.replaceState({}, '', window.location.pathname);
@@ -5048,6 +5102,10 @@ async function importSelectedGcals() {
     <div class="auth-divider">or</div>
     <button class="auth-btn secondary" id="auth-forgot-btn" onclick="authForgot()">Forgot password?</button>
     <div class="auth-switch" id="auth-switch-text">Don't have an account? <span onclick="toggleAuthMode()">Sign up</span></div>
+    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text3);">
+      By signing up you agree to our
+      <a href="https://apar-gif.github.io/DayCal/privacy.html" target="_blank" style="color:var(--accent);text-decoration:none;">Privacy Policy & Terms</a>
+    </div>
   </div>
 </div>
 
