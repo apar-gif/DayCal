@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>if(location.search.indexOf('preview=1')!==-1)document.documentElement.classList.add('preview-mode');</script>
 <style>
   :root{
     --bg:#ffffff;
@@ -224,7 +225,8 @@
   .mini-day.today{background:var(--accent-bg);color:var(--accent-text);font-weight:600;}
   .mini-day.other{color:var(--text3);}
 
-  /* ── Tasks section ── */
+  .mobile-timer-panel{display:none;}
+
   .tasks-section{border:.5px solid var(--border);border-radius:10px;background:var(--bg);overflow:visible;}
   .tasks-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:.5px solid var(--border);}
   .tasks-header-left{display:flex;align-items:center;gap:10px;}
@@ -516,6 +518,7 @@
   /* ── Auth Screen ── */
   .auth-overlay{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;}
   .auth-overlay.hidden{display:none;}
+  .preview-mode .auth-overlay{display:none!important;}
   .auth-box{background:var(--bg);border:.5px solid var(--border2);border-radius:14px;padding:36px 32px;width:340px;box-shadow:var(--sh);}
   .auth-logo{font-size:22px;font-weight:600;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px;}
   .auth-sub{font-size:13px;color:var(--text2);margin-bottom:24px;}
@@ -1842,6 +1845,11 @@ function renderWeek(){
     </div>
   </div>`;
   document.getElementById('cal-body').innerHTML=h;
+  requestAnimationFrame(()=>{
+    const wrap=document.querySelector('.day-grid-wrap');
+    if(!wrap)return;
+    wrap.scrollTop=_savedDayScroll>0?_savedDayScroll:Math.max(0,(new Date().getHours()-1)*56);
+  });
 }
 // Build the rows/event-blocks/now-line for a single day column.
 // Used by both Day view (1 column) and Week view (7 columns).
@@ -4415,6 +4423,55 @@ async function dbDeleteGroup(group) {
 (async () => {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
+
+  // ═══ PREVIEW MODE — ?preview=1 bypasses auth and loads fake sample data ═══
+  // REMOVE BEFORE DEPLOYING
+  if (params.get('preview') === '1') {
+    _confirmingEmail = true;
+    _supaUser = { id: 'preview-user' };
+
+    try {
+      calendars = [
+        { id: 'cal-1', name: 'Personal', color: '#4361ee', visible: true, user_id: 'preview-user' },
+        { id: 'cal-2', name: 'Work',     color: '#e63946', visible: true, user_id: 'preview-user' },
+        { id: 'cal-3', name: 'Fitness',  color: '#2a9d8f', visible: true, user_id: 'preview-user' },
+      ];
+      const today = new Date();
+      const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
+      events = [
+        { id: 'ev-1', title: 'Team standup',  calendar_id: 'cal-2', start: new Date(y,m,d,9,0).toISOString(),    end: new Date(y,m,d,9,30).toISOString(),  allDay: false, user_id: 'preview-user' },
+        { id: 'ev-2', title: 'Gym',           calendar_id: 'cal-3', start: new Date(y,m,d,7,0).toISOString(),    end: new Date(y,m,d,8,0).toISOString(),   allDay: false, user_id: 'preview-user' },
+        { id: 'ev-3', title: 'Lunch',         calendar_id: 'cal-1', start: new Date(y,m,d,12,30).toISOString(),  end: new Date(y,m,d,13,30).toISOString(), allDay: false, user_id: 'preview-user' },
+        { id: 'ev-4', title: 'Deep work',     calendar_id: 'cal-2', start: new Date(y,m,d+1,10,0).toISOString(), end: new Date(y,m,d+1,12,0).toISOString(),allDay: false, user_id: 'preview-user' },
+        { id: 'ev-5', title: 'Review sprint', calendar_id: 'cal-2', start: new Date(y,m,d+2,15,0).toISOString(), end: new Date(y,m,d+2,16,0).toISOString(),allDay: false, user_id: 'preview-user' },
+      ];
+      groups = [{ id: 'grp-1', name: 'College Admissions', user_id: 'preview-user' }];
+      tasks = [
+        { id: 'tsk-1', title: 'Finish personal statement', group_id: 'grp-1', priority: 'high',   estMins: 90, done: false, user_id: 'preview-user' },
+        { id: 'tsk-2', title: 'PIQ Questions',             group_id: 'grp-1', priority: 'medium', estMins: 50, done: false, user_id: 'preview-user' },
+        { id: 'tsk-3', title: 'Match prep notes',          group_id: null,    priority: 'low',    estMins: 30, done: false, user_id: 'preview-user' },
+        { id: 'tsk-4', title: 'Read chapter 5',            group_id: null,    priority: 'medium', estMins: 45, done: false, user_id: 'preview-user' },
+      ];
+    } catch(e) { console.error('preview seed error', e); }
+
+    const _doPreviewRender = () => {
+      const appEl = document.getElementById('app');
+      if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = 'visible'; appEl.style.opacity = '1'; }
+      try { renderSidebar(); } catch(e) { console.error('renderSidebar', e); }
+      try { render(); } catch(e) { console.error('render', e); }
+      try { renderTasks(); } catch(e) { console.error('renderTasks', e); }
+      if (typeof isMobile === 'function' && isMobile()) {
+        requestAnimationFrame(() => { try { mobileNav('cal'); } catch(e) {} });
+      }
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _doPreviewRender);
+    } else {
+      _doPreviewRender();
+    }
+    return;
+  }
+  // ═══ END PREVIEW MODE ═══
 
   // Helper — show sign-in screen cleanly
   function showSignIn(message, isError) {
