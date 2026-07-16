@@ -178,7 +178,7 @@
   /* Time grid */
   .day-grid-wrap{overflow-y:auto;max-height:640px;position:relative;}
   /* Week time-grid */
-  .week-view{border:1px solid var(--border);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--sh);}
+  .week-view{border:1px solid var(--border);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--sh);background:var(--bg);}
   .week-header-row{display:flex;border-bottom:.5px solid var(--border2);flex-shrink:0;}
   .week-time-gutter{width:56px;flex-shrink:0;}
   .week-col-header{flex:1;padding:8px 4px;text-align:center;border-left:.5px solid var(--border);}
@@ -215,7 +215,7 @@
   /* Now line */
   .day-now-line{position:absolute;left:0;right:0;height:2px;background:var(--danger);z-index:10;pointer-events:none;}
   .day-now-dot{position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--danger);}
-  .year-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  .year-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;background:var(--bg);border:1px solid var(--border);border-radius:16px;box-shadow:var(--sh);padding:16px;}
   .mini-month{border:.5px solid var(--border);border-radius:7px;padding:10px;cursor:pointer;transition:background .15s;}
   .mini-month:hover{background:var(--bg2);}
   .mini-title{font-size:12px;font-weight:500;color:var(--text);margin-bottom:6px;text-align:center;}
@@ -1894,6 +1894,7 @@ function buildDayColumn(ds, isT, opts){
       data-ev-idx="${evIdx}" data-ds="${ds}"
       style="top:${top}px;height:${height}px;background:${col}22;border-left-color:${col};color:${col};"
       onmousedown="startEvDrag(event,'${ds}',${evIdx})"
+      ontouchstart="startEvDragTouch(event,'${ds}',${evIdx})"
       ondblclick="openEditEvPopover(event,'${ds}',${evIdx})">
       <div class="day-ev-title">${ev.title?esc(ev.title):'<span style="opacity:.5;font-style:italic;">(No title)</span>'}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
       ${height>28?`<div class="day-ev-time">${timeLabel}</div>`:''}
@@ -3080,6 +3081,35 @@ function startEvDrag(e, ds, evIdx) {
   document.addEventListener('mouseup', cancelTry);
 }
 
+function startEvDragTouch(e, ds, evIdx) {
+  e.stopPropagation();
+  const touch = e.touches[0];
+  const startX = touch.clientX, startY = touch.clientY;
+  let activated = false;
+
+  const timer = setTimeout(() => {
+    activated = true;
+    if (navigator.vibrate) navigator.vibrate(30);
+    _beginDrag({ clientY: startY }, ds, evIdx);
+    cleanup();
+  }, 300);
+
+  function onMove(me) {
+    const t = me.touches[0];
+    if (Math.hypot(t.clientX - startX, t.clientY - startY) > 8) {
+      clearTimeout(timer); cleanup(); // finger moved — let scroll happen
+    }
+  }
+  function onEnd() { clearTimeout(timer); if (!activated) selectEventBlock(ds, evIdx); cleanup(); }
+  function cleanup() {
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend',  onEnd);
+    document.removeEventListener('touchcancel', onEnd);
+  }
+  document.addEventListener('touchmove', onMove, { passive: true });
+  document.addEventListener('touchend',  onEnd);
+  document.addEventListener('touchcancel', onEnd);
+}
 function _beginDrag(e, ds, evIdx) {
   const dayEvs = eventsForDate(ds);
   const ev = dayEvs[evIdx];
@@ -3129,51 +3159,59 @@ function _beginDrag(e, ds, evIdx) {
 
 document.addEventListener('mousemove', e => {
   if (!_drag) return;
+  _processDragMove(e.clientY);
+});
+
+function _processDragMove(clientY) {
+  if (!_drag) return;
   const { clickOffsetMins, durMins, timeLabel, blockEl, wrap, grid, isResize, startMin } = _drag;
-
   const gridRect = grid.getBoundingClientRect();
-  // gridRect.top already moves as the grid scrolls, so this gives the
-  // correct pixel position within the grid without adding scrollTop again
-  const relY     = e.clientY - gridRect.top;
-
+  const relY = clientY - gridRect.top;
   if (isResize) {
-    // Resize: top stays fixed, only height (= duration) changes based on cursor Y
     const rawEnd = relY / PX_PER_MIN;
     let snappedEnd = _snapMin(rawEnd);
     snappedEnd = Math.max(startMin + 15, Math.min(snappedEnd, 24 * 60));
     const newDur = snappedEnd - startMin;
-
     blockEl.style.height = (newDur * PX_PER_MIN) + 'px';
     timeLabel.style.top  = (Math.min(snappedEnd, 24*60) * PX_PER_MIN + 3) + 'px';
     timeLabel.textContent = `Until ${_fmt12short(snappedEnd)} (${newDur >= 60 ? (Math.floor(newDur/60)+'h '+(newDur%60?(newDur%60)+'m':'')) : newDur+'m'})`;
-
     _drag._snappedDur = newDur;
-
-    // Auto-scroll near edges
     const wrapRect = wrap.getBoundingClientRect();
-    if (e.clientY > wrapRect.bottom - 40) wrap.scrollTop += 6;
-    if (e.clientY < wrapRect.top    + 40) wrap.scrollTop -= 6;
+    if (clientY > wrapRect.bottom - 40) wrap.scrollTop += 6;
+    if (clientY < wrapRect.top    + 40) wrap.scrollTop -= 6;
     return;
   }
-
-  const rawStart = (relY / PX_PER_MIN) - clickOffsetMins;
+  const rawStart    = (relY / PX_PER_MIN) - clickOffsetMins;
   const visualStart = Math.max(0, Math.min(rawStart, 24 * 60 - durMins));
-
-  // Snap only for saved value + label
-  let snappedStart = _snapMin(rawStart);
-  snappedStart     = Math.max(0, Math.min(snappedStart, 24 * 60 - durMins));
-  const snappedEnd = snappedStart + durMins;
-
+  let snappedStart  = _snapMin(rawStart);
+  snappedStart      = Math.max(0, Math.min(snappedStart, 24 * 60 - durMins));
+  const snappedEnd  = snappedStart + durMins;
   blockEl.style.top             = (visualStart * PX_PER_MIN) + 'px';
   timeLabel.style.top           = (visualStart * PX_PER_MIN + 3) + 'px';
   timeLabel.textContent         = `${_fmt12short(snappedStart)} – ${_fmt12short(snappedEnd)}`;
-
   _drag._snappedStart = snappedStart;
-
-  // Auto-scroll near edges
   const wrapRect = wrap.getBoundingClientRect();
-  if (e.clientY > wrapRect.bottom - 40) wrap.scrollTop += 6;
-  if (e.clientY < wrapRect.top    + 40) wrap.scrollTop -= 6;
+  if (clientY > wrapRect.bottom - 40) wrap.scrollTop += 6;
+  if (clientY < wrapRect.top    + 40) wrap.scrollTop -= 6;
+}
+
+// Touch drag — shares all logic with mouse drag via _processDragMove
+document.addEventListener('touchmove', e => {
+  if (!_drag) return;
+  e.preventDefault(); // stop page scroll while dragging
+  _processDragMove(e.touches[0].clientY);
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  if (_drag) document.dispatchEvent(new MouseEvent('mouseup'));
+});
+document.addEventListener('touchcancel', () => {
+  if (!_drag) return;
+  _drag.blockEl.classList.remove('dragging');
+  _drag.timeLabel.textContent = '';
+  document.body.style.userSelect = '';
+  document.body.style.cursor = '';
+  _drag = null;
 });
 
 document.addEventListener('mouseup', async () => {
