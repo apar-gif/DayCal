@@ -4199,6 +4199,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       if (mnav) mnav.style.display = '';
       await loadFromSupabase();
       render(); renderSidebar(); renderTasks();
+      requestNotificationPermission().then(scheduleEventNotifications);
       showUserBar();
       if (typeof isMobile === 'function' && isMobile()) {
         requestAnimationFrame(() => {
@@ -4334,7 +4335,41 @@ async function loadFromSupabase() {
   groups = (groupsRes.data || []).map(g => ({ id: g.id, name: g.name, _dbId: g.id }));
 }
 
-// ── SAVE helpers (called after mutations) ──
+// ── Event notifications ──────────────────────────────────────────────────────
+let _notifTimers = [];
+
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') await Notification.requestPermission();
+}
+
+function scheduleEventNotifications() {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  _notifTimers.forEach(clearTimeout);
+  _notifTimers = [];
+  const now = new Date();
+  events.forEach(ev => {
+    if (!ev.startTime || ev.allDay) return;
+    const [h, m] = ev.startTime.split(':').map(Number);
+    const evDate = new Date(ev.date + 'T' + ev.startTime);
+    const msUntil = evDate - now;
+    if (msUntil < 0 || msUntil > 24 * 60 * 60 * 1000) return;
+    const notifyMs = msUntil - 15 * 60 * 1000;
+    if (notifyMs < 0) return;
+    const t = setTimeout(() => {
+      const cal = calendars.find(c => c.id == ev.calId);
+      new Notification(ev.title + ' in 15 minutes', {
+        body: ev.startTime + (cal ? ' · ' + cal.name : ''),
+        icon: '/DayCal/apple-touch-icon.png',
+        tag: String(ev.id) + '-15min',
+        silent: false,
+      });
+    }, notifyMs);
+    _notifTimers.push(t);
+  });
+}
+
+
 async function dbSaveEvent(ev) {
   if (!_supaUser) { saveToStorage(); return; }
   const row = {
@@ -4944,6 +4979,7 @@ async function importSelectedGcals() {
   progress.remove();
   render();
   renderSidebar();
+  scheduleEventNotifications();
 
   // Show success
   const msg = document.createElement('div');
