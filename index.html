@@ -1856,7 +1856,8 @@ function renderWeek(){
 function buildDayColumn(ds, isT, opts){
   opts = opts || {};
   const compact = !!opts.compact; // week view: smaller meta, hide hour labels
-  const PX_PER_MIN_LOCAL = 56/60;
+  const HOUR_H = window.innerWidth <= 768 ? 48 : 56;
+  const PX_PER_MIN_LOCAL = HOUR_H / 60;
   const dayEvs = eventsForDate(ds);
 
   // Hour grid rows (hit targets only)
@@ -3031,7 +3032,7 @@ async function saveNewEvPopover() {
 // DAY VIEW — DRAG TO RESCHEDULE
 // ══════════════════════════════════════════════════════════════
 
-const PX_PER_MIN = 56 / 60;
+let PX_PER_MIN = (window.innerWidth <= 768 ? 48 : 56) / 60;
 const SNAP = 15; // minutes
 
 
@@ -4726,6 +4727,7 @@ function mobileTimerSubTab(which) {
 
 // On resize, reset mobile nav if switching back to desktop
 window.addEventListener('resize', () => {
+  PX_PER_MIN = (window.innerWidth <= 768 ? 48 : 56) / 60;
   if (!isMobile()) {
     const calSection = document.querySelector('.cal-section');
     const tasksSection = document.querySelector('.tasks-section');
