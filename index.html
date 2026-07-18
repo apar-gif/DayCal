@@ -209,6 +209,13 @@
   .day-ev-resize{position:absolute;left:0;right:0;bottom:0;height:6px;cursor:ns-resize;z-index:5;}
   .day-ev-block:hover .day-ev-resize{background:linear-gradient(to bottom,transparent,currentColor 80%);opacity:.25;}
   .day-ev-block.dragging .day-ev-resize{opacity:0;}
+  .ev-bell-btn{position:absolute;top:3px;right:4px;background:none;border:none;cursor:pointer;padding:1px;font-size:11px;opacity:0;color:inherit;line-height:1;transition:opacity .15s;z-index:3;}
+  .day-ev-block:hover .ev-bell-btn{opacity:.5;}
+  .ev-bell-btn:hover{opacity:1!important;}
+  .ev-bell-btn.bell-off{opacity:.75!important;}
+  .notif-denied-banner{display:flex;align-items:center;gap:8px;background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:9px 14px;margin-bottom:10px;font-size:13px;color:#92400e;flex-shrink:0;}
+  .notif-denied-banner a{color:#92400e;text-decoration:underline;}
+  .notif-denied-banner .notif-dismiss{margin-left:auto;background:none;border:none;cursor:pointer;font-size:15px;opacity:.5;color:inherit;padding:0;}
   .day-drag-time{position:absolute;right:7px;top:3px;font-size:10px;font-weight:600;pointer-events:none;z-index:31;}
   .day-ev-title{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .day-ev-time{opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -561,6 +568,7 @@
 
     /* Popovers/dialogs — never exceed viewport width */
     .new-ev-popover{width:calc(100vw - 24px)!important;max-width:340px;}
+    .new-ev-popover h4{padding:6px 0;min-height:36px;}
     .settings-dialog{width:calc(100vw - 32px)!important;max-width:340px;}
     .timer-complete-dialog{width:calc(100vw - 32px)!important;max-width:340px;}
     #gcal-picker-overlay > div{width:calc(100vw - 32px)!important;max-width:340px;}
@@ -1900,6 +1908,7 @@ function buildDayColumn(ds, isT, opts){
       <div class="day-ev-title">${ev.title?esc(ev.title):'<span style="opacity:.5;font-style:italic;">(No title)</span>'}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
       ${height>28?`<div class="day-ev-time">${timeLabel}</div>`:''}
       ${metaHtml}
+      ${'Notification' in window?`<button class="ev-bell-btn${_reminderOff(ev.id)?' bell-off':''}" onclick="event.stopPropagation();toggleReminder('${ev.id}')" title="${_reminderOff(ev.id)?'Reminders off — click to enable':'Reminders on — click to disable'}"><i class="ti ${_reminderOff(ev.id)?'ti-bell-off':'ti-bell'}"></i></button>`:''}
       ${ev._scheduled?`<button class="sched-cancel-btn" onclick="cancelScheduledBlock(event,'${ds}',${evIdx})" title="Cancel scheduled block">✕</button>`:''}
       <div class="day-ev-resize" onmousedown="startEvResize(event,'${ds}',${evIdx})"></div>
     </div>`;
@@ -3895,6 +3904,44 @@ function startPopoverDrag(e) {
   document.body.style.userSelect = 'none';
 }
 
+function startPopoverDragTouch(e) {
+  if (e.target.closest('button')) return;
+  e.preventDefault();
+  const pop = document.getElementById('new-ev-popover');
+  const rect = pop.getBoundingClientRect();
+  const touch = e.touches[0];
+  _popDrag = {
+    offsetX: touch.clientX - rect.left,
+    offsetY: touch.clientY - rect.top
+  };
+  document.getElementById('nep-header').classList.add('dragging');
+}
+
+document.addEventListener('touchmove', e => {
+  if (!_popDrag) return;
+  // Don't preventDefault here if it's the calendar drag — only popover drag
+  if (!document.getElementById('nep-header')?.classList.contains('dragging')) return;
+  e.preventDefault();
+  const pop = document.getElementById('new-ev-popover');
+  const touch = e.touches[0];
+  let left = touch.clientX - _popDrag.offsetX;
+  let top  = touch.clientY - _popDrag.offsetY;
+  const maxLeft = window.innerWidth  - pop.offsetWidth  - 4;
+  const maxTop  = window.innerHeight - pop.offsetHeight - 4;
+  left = Math.max(4, Math.min(left, maxLeft));
+  top  = Math.max(4, Math.min(top,  maxTop));
+  pop.style.left = left + 'px';
+  pop.style.top  = top  + 'px';
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  if (!_popDrag) return;
+  const header = document.getElementById('nep-header');
+  if (!header?.classList.contains('dragging')) return;
+  _popDrag = null;
+  header.classList.remove('dragging');
+});
+
 document.addEventListener('mousemove', e => {
   if (!_popDrag) return;
   const pop = document.getElementById('new-ev-popover');
@@ -4342,6 +4389,33 @@ let _notifTimers = [];
 async function requestNotificationPermission() {
   if (!('Notification' in window)) return;
   if (Notification.permission === 'default') await Notification.requestPermission();
+  if (Notification.permission === 'denied') showNotifDeniedBanner();
+}
+
+function showNotifDeniedBanner() {
+  if (document.getElementById('notif-denied-banner')) return;
+  const div = document.createElement('div');
+  div.id = 'notif-denied-banner';
+  div.className = 'notif-denied-banner';
+  div.innerHTML = `<i class="ti ti-bell-off"></i> Notifications are blocked — enable them in your <a href="https://support.apple.com/en-us/HT204079" target="_blank">device settings</a> to get event reminders.<button class="notif-dismiss" onclick="this.parentElement.remove()">✕</button>`;
+  const main = document.querySelector('.main');
+  if (main) main.prepend(div);
+}
+
+function _reminderOff(evId) {
+  try { return JSON.parse(localStorage.getItem('daycal_remind_off')||'[]').includes(String(evId)); }
+  catch(e) { return false; }
+}
+
+function toggleReminder(evId) {
+  try {
+    const s = JSON.parse(localStorage.getItem('daycal_remind_off')||'[]');
+    const id = String(evId), i = s.indexOf(id);
+    if (i >= 0) s.splice(i,1); else s.push(id);
+    localStorage.setItem('daycal_remind_off', JSON.stringify(s));
+  } catch(e) {}
+  scheduleEventNotifications();
+  render();
 }
 
 function scheduleEventNotifications() {
@@ -4351,22 +4425,21 @@ function scheduleEventNotifications() {
   const now = new Date();
   events.forEach(ev => {
     if (!ev.startTime || ev.allDay) return;
-    const [h, m] = ev.startTime.split(':').map(Number);
+    if (_reminderOff(ev.id)) return;
     const evDate = new Date(ev.date + 'T' + ev.startTime);
     const msUntil = evDate - now;
     if (msUntil < 0 || msUntil > 24 * 60 * 60 * 1000) return;
-    const notifyMs = msUntil - 15 * 60 * 1000;
-    if (notifyMs < 0) return;
-    const t = setTimeout(() => {
-      const cal = calendars.find(c => c.id == ev.calId);
-      new Notification(ev.title + ' in 15 minutes', {
-        body: ev.startTime + (cal ? ' · ' + cal.name : ''),
-        icon: '/DayCal/apple-touch-icon.png',
-        tag: String(ev.id) + '-15min',
-        silent: false,
-      });
-    }, notifyMs);
-    _notifTimers.push(t);
+    const cal = calendars.find(c => c.id == ev.calId);
+    const body = ev.startTime + (cal ? ' · ' + cal.name : '');
+    const icon = '/DayCal/apple-touch-icon.png';
+    const t30 = msUntil - 30 * 60 * 1000;
+    if (t30 > 0) _notifTimers.push(setTimeout(() => {
+      new Notification(ev.title + ' in 30 minutes', { body, icon, tag: String(ev.id)+'-30min' });
+    }, t30));
+    const t5 = msUntil - 5 * 60 * 1000;
+    if (t5 > 0) _notifTimers.push(setTimeout(() => {
+      new Notification(ev.title + ' starting soon', { body, icon, tag: String(ev.id)+'-5min' });
+    }, t5));
   });
 }
 
@@ -4995,7 +5068,7 @@ async function importSelectedGcals() {
 
 <!-- New event popover -->
 <div class="new-ev-popover" id="new-ev-popover">
-  <h4 id="nep-header" onmousedown="startPopoverDrag(event)"><span id="nep-heading">New event</span><button onclick="closeNewEvPopover()"><i class="ti ti-x"></i></button></h4>
+  <h4 id="nep-header" onmousedown="startPopoverDrag(event)" ontouchstart="startPopoverDragTouch(event)"><span id="nep-heading">New event</span><button onclick="closeNewEvPopover()"><i class="ti ti-x"></i></button></h4>
   <div class="nep-row">
     <div class="nep-label">Title</div>
     <input class="nep-input" id="nep-title" placeholder="Event title" maxlength="80" onkeydown="nepKey(event)"/>
