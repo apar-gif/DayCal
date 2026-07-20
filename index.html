@@ -69,6 +69,9 @@
   /* ── Layout ── */
   .app{display:none;gap:0;}
   .app.authenticated{display:flex;}
+  .daycal-toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:9px 16px;border-radius:10px;font-size:13px;font-weight:500;z-index:9999;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;}
+  .daycal-toast.show{opacity:1;}
+  .daycal-toast.warn{background:#b45309;}
   .sidebar{width:230px;flex-shrink:0;border:1px solid var(--border);border-radius:16px;padding:0;display:flex;flex-direction:column;gap:0;margin-right:16px;background:var(--bg);align-self:stretch;box-shadow:var(--sh);overflow:hidden;}
   .main{flex:1;min-width:0;max-width:100%;display:flex;flex-direction:column;gap:20px;overflow-x:hidden;}
 
@@ -1037,7 +1040,7 @@
 <script>
 const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const now=new Date();
+let now=new Date();
 let viewYear=now.getFullYear(),viewMonth=now.getMonth(),viewDate=new Date(now),currentView='month';
 const COLORS=[
   // First 15 — shown by default
@@ -3726,6 +3729,16 @@ closeNewEvPopover = function() {
 
 // Save scroll before re-render on edit save
 let _savedDayScroll = 0;
+
+// Re-render when the calendar date rolls over past midnight
+setInterval(() => {
+  const fresh = new Date();
+  if (fresh.toDateString() !== now.toDateString()) {
+    now = fresh;
+    render();
+    scheduleEventNotifications();
+  }
+}, 60 * 1000);
 const _wrapObserver = new MutationObserver(() => {
   const wrap = document.querySelector('.day-grid-wrap');
   if (wrap) wrap.addEventListener('scroll', () => { _savedDayScroll = wrap.scrollTop; }, { passive: true });
@@ -4248,6 +4261,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       await loadFromSupabase();
       render(); renderSidebar(); renderTasks();
       requestNotificationPermission().then(scheduleEventNotifications);
+      await _flushUnsavedQueue();
       showUserBar();
       if (typeof isMobile === 'function' && isMobile()) {
         requestAnimationFrame(() => {
@@ -4519,22 +4533,75 @@ async function dbSaveTask(task) {
     priority: task.priority || 'none',
     est_mins: task.estMins || 0,
     time_left_mins: task.timeLeftMins || 0,
-    group_id: (task.groupId && typeof task.groupId === 'string' && task.groupId.includes('-')) ? task.groupId : null, // only send valid UUID group ids, drop legacy numeric ones
+    group_id: (task.groupId && typeof task.groupId === 'string' && task.groupId.includes('-')) ? task.groupId : null,
     done: task.done || false,
     scheduled: task.scheduled || false,
   };
   try {
     if (task._dbId) {
       const { error } = await _supa.from('tasks').update(row).eq('id', task._dbId);
-      if (error) console.error('dbSaveTask UPDATE error:', error.message, error.details, row);
+      if (error) { console.error('dbSaveTask UPDATE error:', error.message); _queueUnsavedTask(task); showToast('Save failed — will retry on next sign-in', true); }
     } else {
       const { data, error } = await _supa.from('tasks').insert(row).select().single();
-      if (error) { console.error('dbSaveTask INSERT error:', error.message, error.details, row); return; }
+      if (error) { console.error('dbSaveTask INSERT error:', error.message); _queueUnsavedTask(task); showToast('Save failed — will retry on next sign-in', true); return; }
       if (data) { task._dbId = data.id; task.id = data.id; }
     }
   } catch (e) {
     console.error('dbSaveTask exception:', e);
+    _queueUnsavedTask(task);
+    showToast('Save failed — will retry on next sign-in', true);
   }
+}
+
+// ── Unsaved task queue — survives page reloads ──────────────────────────────
+function _queueUnsavedTask(task) {
+  try {
+    const q = JSON.parse(localStorage.getItem('daycal_unsaved_q') || '[]');
+    // Avoid duplicates by title + due
+    if (!q.find(t => t.title === task.title && t.due === task.due)) {
+      q.push({ ...task, _queuedAt: Date.now() });
+      localStorage.setItem('daycal_unsaved_q', JSON.stringify(q));
+    }
+  } catch(e) {}
+}
+
+async function _flushUnsavedQueue() {
+  if (!_supaUser) return;
+  try {
+    const q = JSON.parse(localStorage.getItem('daycal_unsaved_q') || '[]');
+    if (!q.length) return;
+    localStorage.removeItem('daycal_unsaved_q');
+    let recovered = 0;
+    for (const task of q) {
+      delete task._queuedAt;
+      delete task._dbId; // force a fresh insert
+      task.id = null;
+      tasks.push(task);
+      await dbSaveTask(task);
+      recovered++;
+    }
+    if (recovered) {
+      renderTasks();
+      showToast(`Recovered ${recovered} unsaved task${recovered > 1 ? 's' : ''} ✓`);
+    }
+  } catch(e) { console.error('_flushUnsavedQueue error:', e); }
+}
+
+// ── Toast ───────────────────────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg, warn = false) {
+  let el = document.getElementById('daycal-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'daycal-toast';
+    el.className = 'daycal-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.className = 'daycal-toast' + (warn ? ' warn' : '');
+  requestAnimationFrame(() => el.classList.add('show'));
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
 }
 
 async function dbDeleteTask(task) {
