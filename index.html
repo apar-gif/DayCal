@@ -918,6 +918,7 @@
         <div class="cal-nav">
           <button class="nav-btn" onclick="navigate(-1)" style="padding:6px 10px;"><i class="ti ti-chevron-left"></i></button>
           <button class="nav-btn" style="padding:6px 14px;" onclick="goToToday()">Today</button>
+          <button class="nav-btn" style="padding:6px 14px;" onclick="quickAddNow()" title="Create a 15-min event starting now"><i class="ti ti-bolt"></i> Now</button>
           <button class="nav-btn" onclick="navigate(1)" style="padding:6px 10px;"><i class="ti ti-chevron-right"></i></button>
         </div>
         <span class="cal-title" id="cal-title"></span>
@@ -2862,6 +2863,30 @@ function nepPickCalSelect() {
   }
 }
 
+function quickAddNow() {
+  const n = new Date();
+  const totalMins = n.getHours() * 60 + n.getMinutes();
+  const startMins = _snapTo15(totalMins);
+  const endMins   = Math.min(startMins + 15, 23 * 60 + 45);
+  const ds = n.toISOString().slice(0, 10);
+  // Switch to day view on today so the new block is visible
+  if (currentView === 'month' || currentView === 'year') {
+    viewDate = new Date(n);
+    setView('day');
+  } else if (currentView === 'week') {
+    viewDate = new Date(n);
+    render();
+  }
+  // Use the Now button itself as a throwaway anchor
+  const anchor = document.querySelector('[onclick="quickAddNow()"]') || document.getElementById('cal-body');
+  _openPopover(anchor, ds, _minsToTimeStr(startMins), _minsToTimeStr(endMins));
+  // Scroll the grid to show the new block
+  requestAnimationFrame(() => {
+    const wrap = document.querySelector('.day-grid-wrap');
+    if (wrap) wrap.scrollTop = Math.max(0, (startMins - 30) * PX_PER_MIN);
+  });
+}
+
 function quickAddEvOnHour(e, ds, hour) {
   e.stopPropagation();
   const block = e.currentTarget;
@@ -3163,7 +3188,8 @@ function _beginDrag(e, ds, evIdx) {
     clickOffsetMins,
     timeLabel, blockEl, wrap, grid,
     globalEvRef,
-    _snappedStart: startMin
+    _snappedStart: startMin,
+    targetDs: ds      // tracks which column the event is currently over
   };
 
   document.body.style.userSelect = 'none';
@@ -3172,11 +3198,29 @@ function _beginDrag(e, ds, evIdx) {
 
 document.addEventListener('mousemove', e => {
   if (!_drag) return;
-  _processDragMove(e.clientY);
+  _processDragMove(e.clientY, e.clientX);
 });
 
-function _processDragMove(clientY) {
+function _processDragMove(clientY, clientX) {
   if (!_drag) return;
+
+  // ── Cross-day column switching (week view only) ───────────────────────────
+  if (!_drag.isResize && clientX !== undefined && currentView === 'week') {
+    const cols = document.querySelectorAll('.week-day-col');
+    for (const col of cols) {
+      const r = col.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right) {
+        const newDs = col.dataset.ds;
+        if (newDs && newDs !== _drag.targetDs) {
+          _drag.targetDs = newDs;
+          _drag.grid = col;
+          col.appendChild(_drag.blockEl); // move block element to new column
+        }
+        break;
+      }
+    }
+  }
+
   const { clickOffsetMins, durMins, timeLabel, blockEl, wrap, grid, isResize, startMin } = _drag;
   const gridRect = grid.getBoundingClientRect();
   const relY = clientY - gridRect.top;
@@ -3212,7 +3256,7 @@ function _processDragMove(clientY) {
 document.addEventListener('touchmove', e => {
   if (!_drag) return;
   e.preventDefault(); // stop page scroll while dragging
-  _processDragMove(e.touches[0].clientY);
+  _processDragMove(e.touches[0].clientY, e.touches[0].clientX);
 }, { passive: false });
 
 document.addEventListener('touchend', () => {
@@ -3237,6 +3281,7 @@ document.addEventListener('mouseup', async () => {
   document.body.style.cursor     = '';
 
   const { globalEvRef } = _drag;
+  const targetDs = _drag.targetDs || _drag.ds;
   let oldStartTime = null, oldEndTime = null, didChange = false;
 
   if (globalEvRef) {
@@ -3245,7 +3290,6 @@ document.addEventListener('mouseup', async () => {
 
     let newStartTime, newEndTime;
     if (isResize) {
-      // Resize: keep start time, change end time only
       const newDur = Math.max(_drag._snappedDur, 15);
       const [sh, sm] = globalEvRef.startTime.split(':').map(Number);
       const newEnd = sh * 60 + sm + newDur;
@@ -3258,15 +3302,14 @@ document.addEventListener('mouseup', async () => {
       newEndTime   = _minsToTimeStr(newEnd);
     }
 
-    didChange = (newStartTime !== oldStartTime || newEndTime !== oldEndTime);
+    const dateChanged = targetDs !== globalEvRef.date;
+    didChange = (newStartTime !== oldStartTime || newEndTime !== oldEndTime || dateChanged);
 
     if (didChange) {
       if (globalEvRef._pendingNew) {
-        // This is the placeholder block for an event still being created in the popover —
-        // it hasn't been saved yet, so just update its time and sync the popover's inputs.
-        // No Supabase save, no recurrence prompt (it has no recurId yet).
         globalEvRef.startTime = newStartTime;
         globalEvRef.endTime   = newEndTime;
+        if (dateChanged) globalEvRef.date = targetDs;
         const startInp = document.getElementById('nep-start');
         const endInp   = document.getElementById('nep-end');
         if (startInp) startInp.value = newStartTime;
@@ -3276,13 +3319,12 @@ document.addEventListener('mouseup', async () => {
         const endDelta = _timeStrToMins(newEndTime) - _timeStrToMins(oldEndTime);
 
         if (globalEvRef.recurId && !isResize) {
-          // Recurring event moved (not resized) — ask which instances to apply this shift to
-          _pendingDragShift = { ev: globalEvRef, startDelta, endDelta, newStartTime, newEndTime };
+          _pendingDragShift = { ev: globalEvRef, startDelta, endDelta, newStartTime, newEndTime, newDate: dateChanged ? targetDs : null, oldDate: globalEvRef.date };
           showDragRecurrenceModal();
         } else {
-          // Single event, or a resize (resizes only ever apply to the one instance)
           globalEvRef.startTime = newStartTime;
           globalEvRef.endTime   = newEndTime;
+          if (dateChanged) globalEvRef.date = targetDs;
           await dbSaveEvent(globalEvRef);
         }
       }
@@ -3326,11 +3368,12 @@ async function applyDragRecurrenceScope(scope) {
   _pendingDragShift = null;
   if (!pending) { render(); return; }
 
-  const { ev, startDelta, endDelta, newStartTime, newEndTime } = pending;
+  const { ev, startDelta, endDelta, newStartTime, newEndTime, newDate, oldDate } = pending;
 
   if (scope === 'this') {
     ev.startTime = newStartTime;
     ev.endTime = newEndTime;
+    if (newDate) ev.date = newDate;
     await dbSaveEvent(ev);
   } else if (scope === 'future') {
     const cutoff = ev.date;
