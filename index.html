@@ -1783,7 +1783,7 @@ function confirmImport(){
 }
 
 // ── Calendar helpers ──
-function eventsForDate(ds){return events.filter(e=>{const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));}
+function eventsForDate(ds){return events.filter(e=>{if(e._pendingNew)return e.date===ds;const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));}
 function dateStr(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
 function calColor(calId){const c=calendars.find(x=>x.id==calId);return c?c.color:'#888';}
 
@@ -2868,19 +2868,17 @@ function quickAddNow() {
   const totalMins = n.getHours() * 60 + n.getMinutes();
   const startMins = _snapTo15(totalMins);
   const endMins   = Math.min(startMins + 15, 23 * 60 + 45);
-  const ds = n.toISOString().slice(0, 10);
-  // Switch to day view on today so the new block is visible
+  // Use LOCAL date string, matching how the rest of the app builds date keys
+  const ds = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
+  // Navigate to today in day or week view so the block is visible
+  viewDate = new Date(n);
   if (currentView === 'month' || currentView === 'year') {
-    viewDate = new Date(n);
     setView('day');
-  } else if (currentView === 'week') {
-    viewDate = new Date(n);
+  } else {
     render();
   }
-  // Use the Now button itself as a throwaway anchor
   const anchor = document.querySelector('[onclick="quickAddNow()"]') || document.getElementById('cal-body');
   _openPopover(anchor, ds, _minsToTimeStr(startMins), _minsToTimeStr(endMins));
-  // Scroll the grid to show the new block
   requestAnimationFrame(() => {
     const wrap = document.querySelector('.day-grid-wrap');
     if (wrap) wrap.scrollTop = Math.max(0, (startMins - 30) * PX_PER_MIN);
