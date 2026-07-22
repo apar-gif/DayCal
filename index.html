@@ -1883,6 +1883,11 @@ function buildDayColumn(ds, isT, opts){
       </div>
     </div>`;
   }
+  // End-of-day label
+  rows+=`<div class="day-hour-row" style="height:20px;flex-shrink:0;">
+    ${compact?'':`<div class="day-hour-label">12 AM</div>`}
+    <div class="day-hour-line"></div>
+  </div>`;
 
   // Positioned event blocks
   let evBlocks='', evIdx=0;
@@ -1894,7 +1899,7 @@ function buildDayColumn(ds, isT, opts){
     const dur=Math.max(endMin-startMin,15);
     const top=startMin*PX_PER_MIN_LOCAL;
     const height=dur*PX_PER_MIN_LOCAL;
-    const col=calColor(ev.calId);
+    const col = ev.title==='Block' ? '#9ca3af' : calColor(ev.calId);
     const timeLabel=`${ev.startTime}–${ev.endTime}`;
     const metaThreshold = compact ? 50 : 42;
     const metaHtml = height > metaThreshold ? (()=>{
@@ -2863,26 +2868,29 @@ function nepPickCalSelect() {
   }
 }
 
-function quickAddNow() {
+async function quickAddNow() {
   const n = new Date();
-  const totalMins = n.getHours() * 60 + n.getMinutes();
-  const startMins = _snapTo15(totalMins);
+  const startMins = _snapTo15(n.getHours() * 60 + n.getMinutes());
   const endMins   = Math.min(startMins + 15, 23 * 60 + 45);
-  // Use LOCAL date string, matching how the rest of the app builds date keys
-  const ds = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
-  // Navigate to today in day or week view so the block is visible
+  const ds        = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
+  const calId     = (calendars.find(c => c.visible) || calendars[0])?.id || null;
+
+  const ev = { calId, title: 'Block', date: ds, startTime: _minsToTimeStr(startMins), endTime: _minsToTimeStr(endMins), allDay: false };
+  events.push(ev);
+
   viewDate = new Date(n);
   if (currentView === 'month' || currentView === 'year') {
-    setView('day');
+    setView('week');
   } else {
     render();
   }
-  const anchor = document.querySelector('[onclick="quickAddNow()"]') || document.getElementById('cal-body');
-  _openPopover(anchor, ds, _minsToTimeStr(startMins), _minsToTimeStr(endMins));
+
   requestAnimationFrame(() => {
     const wrap = document.querySelector('.day-grid-wrap');
     if (wrap) wrap.scrollTop = Math.max(0, (startMins - 30) * PX_PER_MIN);
   });
+
+  await dbSaveEvent(ev);
 }
 
 function quickAddEvOnHour(e, ds, hour) {
