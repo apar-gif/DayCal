@@ -246,15 +246,19 @@
   .filter-btn{font-size:12px;padding:4px 10px;border-radius:20px;border:.5px solid transparent;background:none;color:var(--text2);}
   .filter-btn:hover{background:var(--bg2);color:var(--text);}
   .filter-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 6px rgba(79,126,248,.3);}
-  .tasks-body{padding:12px 16px;display:flex;flex-direction:column;gap:2px;}
+  .tasks-body{padding:8px 10px 4px;display:flex;flex-direction:column;gap:0;}
   .task-add-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border);margin-bottom:6px;}
   .task-add-row input{flex:1;font-size:13px;border:none;background:none;color:var(--text);outline:none;font-family:inherit;}
   .task-add-row input::placeholder{color:var(--text3);}
   .task-add-btn{background:var(--accent-bg);color:var(--accent-text);border:.5px solid var(--accent);font-size:12px;padding:4px 12px;}
   .task-add-btn:hover{filter:brightness(.95);}
-  .task-item{display:flex;align-items:flex-start;gap:10px;padding:8px 6px;border-radius:7px;transition:background .15s;group:true;}
-  .task-item:hover{background:var(--bg2);}
+  .task-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;border:.5px solid var(--border);border-left:3px solid var(--border);background:var(--bg);margin-bottom:5px;transition:box-shadow .15s,border-color .15s;}
+  .task-item:hover{box-shadow:0 2px 8px rgba(0,0,0,.07);}
   .task-item:hover .task-delete{opacity:1;}
+  .task-item[data-priority="high"]{border-left-color:#e05c5c;}
+  .task-item[data-priority="medium"]{border-left-color:#f59e0b;}
+  .task-item[data-priority="low"]{border-left-color:#4a90d9;}
+  .task-item.done{opacity:.55;}
   .task-cb{width:17px;height:17px;border-radius:50%;border:1.5px solid var(--border2);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;transition:background .15s,border-color .15s;}
   .task-cb:hover{border-color:var(--accent);}
   .task-item.completing .task-cb{background:var(--accent);border-color:var(--accent);}
@@ -305,10 +309,11 @@
   select.atd-input{cursor:pointer;}
 
   /* Task groups */
-  .task-group{margin-bottom:8px;}
-  .task-group-header{display:flex;align-items:center;gap:6px;padding:6px 6px;border-radius:7px;cursor:pointer;transition:background .15s;user-select:none;}
+  .task-group{margin-bottom:4px;}
+  .task-group-header{display:flex;align-items:center;gap:6px;padding:10px 4px 5px;border-radius:7px;cursor:pointer;transition:background .15s;user-select:none;}
   .task-group-header:hover{background:var(--bg2);}
   .task-group-header:hover .task-group-actions{opacity:1;}
+  .tg-name{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);}
   .tg-chevron{font-size:13px;color:var(--text3);transition:transform .2s;flex-shrink:0;}
   .task-group.collapsed .tg-chevron{transform:rotate(-90deg);}
   .tg-name{font-size:13px;font-weight:500;color:var(--text);flex:1;}
@@ -553,7 +558,7 @@
   @media (max-width: 768px) {
     :root{--mobile-nav-h:calc(56px + max(env(safe-area-inset-bottom), 16px));}
     html{overflow-x:hidden;overscroll-behavior:none;background:#fff;}
-    body{padding:0!important;margin:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;width:100vw;min-height:unset!important;background:#fff!important;
+    body{padding:0!important;margin:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;width:100vw;min-height:unset!important;background:var(--bg2)!important;
       padding-top:env(safe-area-inset-top)!important;
       padding-top:max(env(safe-area-inset-top), 12px)!important;
     }
@@ -1509,7 +1514,7 @@ function renderTasks(){saveToStorage();
     const estMinsDisplay=t.timeLeftMins!=null?t.timeLeftMins:t.estMins;
     const estLabel=estMinsDisplay?`<span class="task-due" title="${t.timeLeftMins!=null?'Time remaining':'Estimated time'}"><i class="ti ti-clock" style="font-size:11px;"></i>${formatEst(estMinsDisplay)}${t.timeLeftMins!=null&&t.timeLeftMins<t.estMins?' left':''}</span>`:'';
     const hasMeta=dueLabel||priLabel||estLabel;
-    return `<div class="task-item${t.done?' done':''}" draggable="true" data-task-id="${t.id}"
+    return `<div class="task-item${t.done?' done':''}" draggable="true" data-task-id="${t.id}" data-priority="${t.priority||'none'}"
       ondragstart="onTaskDragStart(event,'${t.id}')"
       ondragend="onTaskDragEnd(event)">
       <div class="task-cb" onclick="toggleTask('${t.id}')"></div>
