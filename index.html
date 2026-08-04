@@ -1430,7 +1430,13 @@ async function saveTask(){
   let savedTask;
   if(editingTaskId!==null){
     const t=tasks.find(x=>x.id==editingTaskId);
-    if(t){Object.assign(t,data); savedTask=t;}
+    if(t){
+      const oldEst = t.estMins;
+      Object.assign(t,data);
+      // Keep timeLeftMins in sync if the timer hasn't been partially used
+      if(t.timeLeftMins == null || t.timeLeftMins >= oldEst) t.timeLeftMins = t.estMins;
+      savedTask=t;
+    }
   } else {
     savedTask = {id:taskNextId++,...data,done:false,scheduled:false,timeLeftMins:estMins||0};
     tasks.push(savedTask);
@@ -1445,8 +1451,9 @@ async function quickAddTask(e){
   const title=inp.value.trim();if(!title)return;
   const newTask = {id:taskNextId++,title,notes:'',due:'',priority:'none',done:false,estMins:0,timeLeftMins:0};
   tasks.push(newTask);
-  inp.value='';renderTasks();
-  await dbSaveTask(newTask);
+  inp.value='';renderTasks(); // optimistic render with temp ID
+  await dbSaveTask(newTask);  // sets newTask.id = real UUID
+  renderTasks();              // re-render so DOM id matches the saved UUID
 }
 
 function toggleTask(id) {
