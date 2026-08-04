@@ -2735,18 +2735,21 @@ async function applySchedule(actions) {
     const firstAction = actions[0];
     const timerTask = tasks.find(x => x.id == firstAction.taskId);
     if (timerTask) {
-      // Stop any running timer first
+      // Save progress on whatever was running before, then switch
       if (timerRunning) stopTimer();
+      else if (timerTaskId) saveTimerProgress();
       // Set task in timer select
       timerTaskId = timerTask.id;
       const sel = document.getElementById('timer-task-select');
       if (sel) sel.value = String(timerTask.id);
-      // Set countdown from now until the slot end time, so the timer
-      // honours the rounded start (e.g. slot starts at 1:30, it's 1:22 now → 38 min countdown)
-      const slotEndMins = slot.startMins + firstAction.mins; // absolute end in day-minutes
-      const nowDayMins = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
-      const secsUntilEnd = Math.round((slotEndMins - nowDayMins) * 60);
-      timerSecondsLeft = Math.max(secsUntilEnd, firstAction.mins * 60);
+      // Set countdown: if the slot is happening right now use time-until-end,
+      // otherwise just use the task's duration so we don't inflate timeLeftMins
+      const slotEndMins = slot.startMins + firstAction.mins;
+      const nowDayMins = new Date().getHours() * 60 + new Date().getMinutes() + new Date().getSeconds() / 60;
+      const isActiveNow = nowDayMins >= slot.startMins && nowDayMins < slotEndMins;
+      timerSecondsLeft = isActiveNow
+        ? Math.max(Math.round((slotEndMins - nowDayMins) * 60), 60)
+        : firstAction.mins * 60;
       document.getElementById('timer-play-btn').disabled = false;
       updateTimerDisplay();
       updateTimerEst(timerTask);
