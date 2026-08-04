@@ -572,7 +572,7 @@
       background:var(--bg2);
     }
     /* Main scrolls naturally */
-    .main{overflow-y:visible;padding:0;}
+    .main{overflow-y:visible;padding:0;background:var(--bg2);}
     .cal-section,.tasks-section{overscroll-behavior:contain;}
 
     /* Popovers/dialogs — never exceed viewport width */
@@ -587,7 +587,7 @@
 
     /* Hide sidebar — shown via bottom sheet instead */
     .sidebar{display:none;}
-    .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:120px;z-index:400;width:100%;border-radius:0;margin:0;overflow-y:scroll;-webkit-overflow-scrolling:touch;padding-bottom:16px;}
+    .sidebar.mobile-open{display:flex;position:fixed;top:0;left:0;right:0;bottom:var(--mobile-nav-h);z-index:400;width:100%;border-radius:0;margin:0;overflow-y:scroll;-webkit-overflow-scrolling:touch;padding-bottom:16px;background:var(--bg2);}
 
     /* Main takes full width */
     .main{gap:8px;}
@@ -1844,17 +1844,18 @@ function renderWeek(){
     bodyCols+=`<div class="week-day-col" data-ds="${ds}">${colHtml}</div>`;
   }
 
+  const WEEK_HOUR_H = window.innerWidth <= 768 ? 48 : 56;
   const h=`<div class="week-view">
     <div class="week-header-row">
       <div class="week-time-gutter"></div>
       ${headerCols}
     </div>
     <div class="day-grid-wrap">
-      <div class="week-cols-wrap" style="height:${24*56}px;">
+      <div class="week-cols-wrap" style="height:${24*WEEK_HOUR_H}px;">
         <div class="day-hour-label-col">
           ${Array.from({length:24},(_,i)=>{
             const lbl=i===0?'12 AM':i<12?i+' AM':i===12?'12 PM':(i-12)+' PM';
-            return `<div class="week-hour-label" style="top:${i*56}px;">${lbl}</div>`;
+            return `<div class="week-hour-label" style="top:${i*WEEK_HOUR_H}px;">${lbl}</div>`;
           }).join('')}
         </div>
         ${bodyCols}
@@ -1866,7 +1867,7 @@ function renderWeek(){
   requestAnimationFrame(()=>{
     const wrap=document.querySelector('.day-grid-wrap');
     if(!wrap)return;
-    wrap.scrollTop=_savedDayScroll>0?_savedDayScroll:Math.max(0,(new Date().getHours()-1)*56);
+    wrap.scrollTop=_savedDayScroll>0?_savedDayScroll:Math.max(0,(new Date().getHours()-1)*WEEK_HOUR_H);
   });
 }
 // Build the rows/event-blocks/now-line for a single day column.
@@ -1933,7 +1934,8 @@ function buildDayColumn(ds, isT, opts){
   // Now line
   let nowLine='';
   if(isT){
-    const nowMin=now.getHours()*60+now.getMinutes();
+    const _nowTs=new Date();
+    const nowMin=_nowTs.getHours()*60+_nowTs.getMinutes();
     nowLine=`<div class="day-now-line" style="top:${nowMin*PX_PER_MIN_LOCAL}px"><div class="day-now-dot"></div></div>`;
   }
 
@@ -3792,6 +3794,12 @@ setInterval(() => {
     now = fresh;
     render();
     scheduleEventNotifications();
+  }
+  // Also nudge the now-line position without a full re-render
+  const nowLine = document.querySelector('.day-now-line');
+  if (nowLine) {
+    const HOUR_H = window.innerWidth <= 768 ? 48 : 56;
+    nowLine.style.top = (fresh.getHours()*60 + fresh.getMinutes()) * (HOUR_H/60) + 'px';
   }
 }, 60 * 1000);
 const _wrapObserver = new MutationObserver(() => {
