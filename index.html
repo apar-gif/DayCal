@@ -1920,12 +1920,12 @@ function buildDayColumn(ds, isT, opts){
       style="top:${top}px;height:${height}px;background:${col}22;border-left-color:${col};color:${col};"
       onmousedown="startEvDrag(event,'${ds}',${evIdx})"
       ontouchstart="startEvDragTouch(event,'${ds}',${evIdx})"
-      ondblclick="openEditEvPopover(event,'${ds}',${evIdx})">
+      ondblclick="dblClickEvent(event,'${ds}',${evIdx})">
       <div class="day-ev-title">${ev.title?esc(ev.title):'<span style="opacity:.5;font-style:italic;">(No title)</span>'}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
       ${height>28?`<div class="day-ev-time">${timeLabel}</div>`:''}
       ${metaHtml}
       ${'Notification' in window?`<button class="ev-bell-btn${_reminderOff(ev.id)?' bell-off':''}" onclick="event.stopPropagation();toggleReminder('${ev.id}')" title="${_reminderOff(ev.id)?'Reminders off — click to enable':'Reminders on — click to disable'}"><i class="ti ${_reminderOff(ev.id)?'ti-bell-off':'ti-bell'}"></i></button>`:''}
-      ${ev._scheduled?`<button class="sched-cancel-btn" onclick="cancelScheduledBlock(event,'${ds}',${evIdx})" title="Cancel scheduled block">✕</button>`:''}
+      ${ev._scheduled?`<button class="sched-cancel-btn" onclick="confirmUnschedule(event,'${ds}',${evIdx})" title="Unschedule">✕</button>`:''}
       <div class="day-ev-resize" onmousedown="startEvResize(event,'${ds}',${evIdx})"></div>
     </div>`;
     evIdx++;
@@ -3699,6 +3699,18 @@ function _recurrenceLabel(val) {
 // EDIT / DELETE EVENT (double-click)
 // ══════════════════════════════════════════════════════════════
 
+function dblClickEvent(e, ds, evIdx) {
+  const dayEvs = eventsForDate(ds);
+  const ev = dayEvs[evIdx];
+  if (!ev) return;
+  // Scheduled blocks (AI scheduler or "Block" events) → unschedule immediately
+  if (ev._scheduled || ev.title === 'Block') {
+    cancelScheduledBlock(e, ds, evIdx);
+  } else {
+    openEditEvPopover(e, ds, evIdx);
+  }
+}
+
 let _editingEvRef = null; // direct reference to event object being edited
 
 function openEditEvPopover(e, ds, evIdx) {
@@ -3815,6 +3827,44 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══════════════════════════════════════════════════════════════
 // CANCEL SCHEDULED BLOCK
 // ══════════════════════════════════════════════════════════════
+
+function confirmUnschedule(e, ds, evIdx) {
+  e.stopPropagation();
+  e.preventDefault();
+
+  // Remove any existing dialog
+  const old = document.getElementById('unschedule-dlg');
+  if (old) { old.remove(); return; } // toggle off if already open
+
+  const dlg = document.createElement('div');
+  dlg.id = 'unschedule-dlg';
+  dlg.style.cssText = 'position:fixed;z-index:9999;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--sh-lg);min-width:190px;';
+  dlg.innerHTML = `
+    <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;">Unschedule this event?</div>
+    <div style="display:flex;gap:8px;">
+      <button id="unschedule-yes" style="flex:1;padding:7px 10px;background:var(--danger);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">Unschedule</button>
+      <button id="unschedule-no"  style="flex:1;padding:7px 10px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;">Cancel</button>
+    </div>`;
+  document.body.appendChild(dlg);
+
+  // Position below the clicked button, clamped to viewport
+  const btn = e.currentTarget || e.target;
+  const r = btn.getBoundingClientRect();
+  dlg.style.left = Math.min(r.left, window.innerWidth - 210) + 'px';
+  dlg.style.top  = (r.bottom + 6) + 'px';
+
+  document.getElementById('unschedule-yes').onclick = () => {
+    dlg.remove();
+    cancelScheduledBlock(e, ds, evIdx);
+  };
+  document.getElementById('unschedule-no').onclick = () => dlg.remove();
+
+  // Dismiss on outside click
+  const dismiss = (evt) => {
+    if (!dlg.contains(evt.target)) { dlg.remove(); document.removeEventListener('mousedown', dismiss); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+}
 
 async function cancelScheduledBlock(e, ds, evIdx) {
   e.stopPropagation();
