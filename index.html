@@ -2755,12 +2755,12 @@ async function applySchedule(actions) {
     }
   }
 
-  // Advance to next slot
-  schedSlotIndex++;
+  // Recompute slots so the scheduled block shrinks the current free slot
+  // rather than skipping to the next one entirely
+  schedSlots = computeWeekSlots();
+  // If the slot was fully consumed, clamp to valid range
   if (schedSlotIndex >= schedSlots.length) {
-    // Recompute in case new events were added
-    schedSlots = computeWeekSlots();
-    schedSlotIndex = schedSlots.length > 0 ? schedSlots.length - 1 : 0;
+    schedSlotIndex = Math.max(0, schedSlots.length - 1);
   }
   schedSelectedTaskId = null;
   renderSchedPanel();
