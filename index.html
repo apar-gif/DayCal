@@ -1989,6 +1989,7 @@ let timerSecondsLeft=0;
 let timerInterval=null;
 let timerRunning=false;
 let timerCollapsed=false;
+let timerScheduledTimeout=null; // pending auto-start for a future scheduled slot
 
 function populateTimerSelect(){
   const sel=document.getElementById('timer-task-select');
@@ -2738,23 +2739,31 @@ async function applySchedule(actions) {
       // Save progress on whatever was running before, then switch
       if (timerRunning) stopTimer();
       else if (timerTaskId) saveTimerProgress();
+
+      // Cancel any pending scheduled start
+      if (timerScheduledTimeout) { clearTimeout(timerScheduledTimeout); timerScheduledTimeout = null; }
+
       // Set task in timer select
       timerTaskId = timerTask.id;
       const sel = document.getElementById('timer-task-select');
       if (sel) sel.value = String(timerTask.id);
-      // Set countdown: if the slot is happening right now use time-until-end,
-      // otherwise just use the task's duration so we don't inflate timeLeftMins
-      const slotEndMins = slot.startMins + firstAction.mins;
-      const nowDayMins = new Date().getHours() * 60 + new Date().getMinutes() + new Date().getSeconds() / 60;
-      const isActiveNow = nowDayMins >= slot.startMins && nowDayMins < slotEndMins;
-      timerSecondsLeft = isActiveNow
-        ? Math.max(Math.round((slotEndMins - nowDayMins) * 60), 60)
-        : firstAction.mins * 60;
+
+      timerSecondsLeft = firstAction.mins * 60;
       document.getElementById('timer-play-btn').disabled = false;
-      updateTimerDisplay();
       updateTimerEst(timerTask);
-      // Start the timer
-      startTimer();
+
+      const nowDayMins2 = new Date().getHours() * 60 + new Date().getMinutes() + new Date().getSeconds() / 60;
+      const msUntilStart = Math.round((slot.startMins - nowDayMins2) * 60 * 1000);
+
+      if (msUntilStart > 5000) {
+        // Slot is in the future — show pending state, don't start yet
+        updateTimerDisplay();
+        _showScheduledTimerPending(timerTask, slot.startMins, msUntilStart, firstAction.mins);
+      } else {
+        // Slot is now or imminent — start immediately
+        updateTimerDisplay();
+        startTimer();
+      }
     }
   }
 
@@ -3923,7 +3932,56 @@ function confirmUnscheduleTask(taskId, anchorEl) {
   setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
 }
 
+async function _showScheduledTimerPending(task, slotStartMins, msUntilStart, taskMins) {
+  // Show "Starting at X:XX PM" in the timer display
+  const disp = document.getElementById('timer-display');
+  if (disp) {
+    const h = Math.floor(slotStartMins / 60), m = slotStartMins % 60;
+    const ampm = h < 12 ? 'AM' : 'PM';
+    const hh = h % 12 || 12;
+    const mm = String(m).padStart(2, '0');
+    disp.textContent = `${hh}:${mm} ${ampm}`;
+    disp.style.fontSize = '18px';
+    disp.style.color = 'var(--text3)';
+  }
+  const btn = document.getElementById('timer-play-btn');
+  if (btn) btn.disabled = true;
+
+  // Auto-start when the slot arrives
+  timerScheduledTimeout = setTimeout(() => {
+    timerScheduledTimeout = null;
+    // Reset display
+    if (disp) { disp.style.fontSize = ''; disp.style.color = ''; }
+    if (btn) btn.disabled = false;
+    timerSecondsLeft = taskMins * 60;
+    updateTimerDisplay();
+    startTimer();
+    // Fire a notification
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(`Starting now: ${task.title}`, {
+        body: `Your ${formatEst(taskMins)} block is beginning.`,
+        icon: '/DayCal/apple-touch-icon.png',
+        tag: 'timer-start-' + String(task.id),
+        requireInteraction: true,
+      });
+    }
+    showToast(`⏱ Starting: ${task.title}`);
+  }, msUntilStart);
+}
+
 async function unscheduleTask(taskId) {
+  // Cancel pending timer start if it was for this task
+  if (timerScheduledTimeout && String(timerTaskId) === String(taskId)) {
+    clearTimeout(timerScheduledTimeout);
+    timerScheduledTimeout = null;
+    timerTaskId = null; timerSecondsLeft = 0;
+    const disp = document.getElementById('timer-display');
+    if (disp) { disp.style.fontSize = ''; disp.style.color = ''; }
+    const btn = document.getElementById('timer-play-btn');
+    if (btn) btn.disabled = true;
+    updateTimerDisplay();
+  }
+
   const task = tasks.find(t => String(t.id) === String(taskId));
   if (!task) return;
 
