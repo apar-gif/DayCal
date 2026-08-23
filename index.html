@@ -255,9 +255,9 @@
   .task-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px;border:.5px solid var(--border);border-left:3px solid var(--border);background:var(--bg);margin-bottom:5px;transition:box-shadow .15s,border-color .15s;}
   .task-item:hover{box-shadow:0 2px 8px rgba(0,0,0,.07);}
   .task-item:hover .task-delete{opacity:1;}
-  .task-item[data-priority="high"]{border-left-color:#e05c5c;}
-  .task-item[data-priority="medium"]{border-left-color:#f59e0b;}
-  .task-item[data-priority="low"]{border-left-color:#4a90d9;}
+  .task-item[data-priority="high"]{border-left-color:var(--border);}
+  .task-item[data-priority="medium"]{border-left-color:var(--border);}
+  .task-item[data-priority="low"]{border-left-color:var(--border);}
   .task-item.done{opacity:.55;}
   .task-cb{width:17px;height:17px;border-radius:50%;border:1.5px solid var(--border2);flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-top:1px;transition:background .15s,border-color .15s;}
   .task-cb:hover{border-color:var(--accent);}
@@ -809,13 +809,8 @@
         <input class="atd-input" id="atd-due" type="date"/>
       </div>
       <div class="atd-row">
-        <div class="atd-label">Priority</div>
-        <select class="atd-input" id="atd-priority">
-          <option value="none">None</option>
-          <option value="low">Low</option>
-          <option value="medium">Medium</option>
-          <option value="high">High</option>
-        </select>
+        <div class="atd-label">Due time</div>
+        <input class="atd-input" id="atd-due-time" type="time"/>
       </div>
     </div>
     <div class="atd-row">
@@ -1393,7 +1388,7 @@ function openAddTask(){
   document.getElementById('atd-title').value='';
   document.getElementById('atd-notes').value='';
   document.getElementById('atd-due').value='';
-  document.getElementById('atd-priority').value='none';
+  document.getElementById('atd-due-time').value='';
   document.getElementById('atd-est-hours').value='';
   document.getElementById('atd-est-mins').value='';
   populateGroupSelect(null);
@@ -1409,7 +1404,7 @@ function openEditTask(id){
   document.getElementById('atd-title').value=t.title;
   document.getElementById('atd-notes').value=t.notes||'';
   document.getElementById('atd-due').value=t.due||'';
-  document.getElementById('atd-priority').value=t.priority||'none';
+  document.getElementById('atd-due-time').value=t.dueTime||'';
   document.getElementById('atd-est-hours').value=t.estMins?Math.floor(t.estMins/60):'';
   document.getElementById('atd-est-mins').value=t.estMins?t.estMins%60:'';
   populateGroupSelect(t.groupId||null);
@@ -1426,7 +1421,7 @@ async function saveTask(){
   const estMins=estH*60+estM;
   const gVal=document.getElementById('atd-group').value;
   const groupId=gVal?(gVal.includes('-')?gVal:parseInt(gVal)):null; // group ids may be UUID strings (synced) or legacy numbers (local-only)
-  const data={title,notes:document.getElementById('atd-notes').value.trim(),due:document.getElementById('atd-due').value,priority:document.getElementById('atd-priority').value,estMins:estMins||0,groupId};
+  const data={title,notes:document.getElementById('atd-notes').value.trim(),due:document.getElementById('atd-due').value,dueTime:document.getElementById('atd-due-time').value||'',priority:'none',estMins:estMins||0,groupId};
   let savedTask;
   if(editingTaskId!==null){
     const t=tasks.find(x=>x.id==editingTaskId);
@@ -1449,7 +1444,7 @@ async function quickAddTask(e){
   if(e.key!=='Enter')return;
   const inp=document.getElementById('quick-task-input');
   const title=inp.value.trim();if(!title)return;
-  const newTask = {id:taskNextId++,title,notes:'',due:'',priority:'none',done:false,estMins:0,timeLeftMins:0};
+  const newTask = {id:taskNextId++,title,notes:'',due:'',dueTime:'',priority:'none',done:false,estMins:0,timeLeftMins:0};
   tasks.push(newTask);
   inp.value='';renderTasks(); // optimistic render with temp ID
   await dbSaveTask(newTask);  // sets newTask.id = real UUID
@@ -1519,18 +1514,18 @@ function renderTasks(){saveToStorage();
   const td=todayStr();
   function taskHtml(t){
     const isOver=t.due&&t.due<td&&!t.done;
-    const dueLabel=t.due?`<span class="task-due${isOver?' overdue':''}"><i class="ti ti-calendar" style="font-size:11px;"></i>${formatDue(t.due,td)}</span>`:'';
-    const priLabel=t.priority&&t.priority!=='none'?`<span class="task-priority ${t.priority}">${t.priority}</span>`:'';
+    const timeStr=t.dueTime?(' at '+_fmt12shortTime(t.dueTime)):'';
+    const dueLabel=t.due?`<span class="task-due${isOver?' overdue':''}"><i class="ti ti-calendar" style="font-size:11px;"></i>${formatDue(t.due,td)}${timeStr}</span>`:'';
     const estMinsDisplay=t.timeLeftMins!=null?t.timeLeftMins:t.estMins;
     const estLabel=estMinsDisplay?`<span class="task-due" title="${t.timeLeftMins!=null?'Time remaining':'Estimated time'}"><i class="ti ti-clock" style="font-size:11px;"></i>${formatEst(estMinsDisplay)}${t.timeLeftMins!=null&&t.timeLeftMins<t.estMins?' left':''}</span>`:'';
-    const hasMeta=dueLabel||priLabel||estLabel;
+    const hasMeta=dueLabel||estLabel;
     return `<div class="task-item${t.done?' done':''}" draggable="true" data-task-id="${t.id}" data-priority="${t.priority||'none'}"
       ondragstart="onTaskDragStart(event,'${t.id}')"
       ondragend="onTaskDragEnd(event)">
       <div class="task-cb" onclick="toggleTask('${t.id}')"></div>
       <div class="task-content">
         <div class="task-title">${esc(t.title)}</div>
-        ${hasMeta?`<div class="task-meta">${dueLabel}${priLabel}${estLabel}</div>`:''}
+        ${hasMeta?`<div class="task-meta">${dueLabel}${estLabel}</div>`:''}
       </div>
       <div class="task-actions">
         <button class="task-action-btn" onclick="toggleTimePopover(event,'${t.id}')" title="Set time"><i class="ti ti-clock"></i></button>
@@ -1715,6 +1710,14 @@ function formatEst(mins){
   if(h&&m)return `${h}h ${m}m`;
   if(h)return `${h}h`;
   return `${m}m`;
+}
+
+function _fmt12shortTime(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const hh = h % 12 || 12;
+  return m === 0 ? `${hh} ${ampm}` : `${hh}:${String(m).padStart(2,'0')} ${ampm}`;
 }
 
 function formatDue(due,td){
@@ -2551,25 +2554,35 @@ function renderAutoTab(body) {
   const td = todayStr();
   function scoreTask(t) {
     const timeLeft = t.timeLeftMins > 0 ? t.timeLeftMins : (t.estMins || 0);
-    // Priority base
-    const priBase = { none: 0.5, low: 1, medium: 2, high: 3 }[t.priority || 'none'] || 0.5;
-    // Urgency multiplier
+    // Urgency — based on due date + due time (priority removed)
     let urgency = 1;
     if (t.due) {
-      const diff = Math.round((new Date(t.due + 'T00:00:00') - new Date(td + 'T00:00:00')) / 86400000);
-      if (diff <= 0) urgency = 4;
-      else if (diff === 1) urgency = 3;
-      else if (diff <= 3) urgency = 2;
-      else if (diff <= 7) urgency = 1.5;
-      else if (diff <= 14) urgency = 1.1;
+      const dayDiff = Math.round((new Date(t.due + 'T00:00:00') - new Date(td + 'T00:00:00')) / 86400000);
+      if (t.dueTime && dayDiff === 0) {
+        // Due today with a specific time — use hours-until-due for precision
+        const [dh, dm] = t.dueTime.split(':').map(Number);
+        const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+        const hoursUntil = ((dh * 60 + dm) - nowMins) / 60;
+        if (hoursUntil <= 0)  urgency = 8;   // past due time
+        else if (hoursUntil <= 1)  urgency = 7;
+        else if (hoursUntil <= 3)  urgency = 6;
+        else if (hoursUntil <= 6)  urgency = 5;
+        else urgency = 4.5;
+      } else {
+        if (dayDiff <= 0) urgency = 4;
+        else if (dayDiff === 1) urgency = 3;
+        else if (dayDiff <= 3) urgency = 2;
+        else if (dayDiff <= 7) urgency = 1.5;
+        else if (dayDiff <= 14) urgency = 1.1;
+      }
     }
-    // Completion multiplier
+    // Completion multiplier — reward tasks that fit fully in the slot
     const fits = timeLeft <= slot.durMins;
     const completion = fits ? 1.5 : 1;
-    // Continuity bonus
+    // Continuity bonus — keep going on partially-done work
     const continuity = t._partiallyScheduled ? 0.5 : 0;
-    const score = priBase * urgency * completion + continuity;
-    return { score, priBase, urgency, completion, continuity, fits, timeLeft };
+    const score = urgency * completion + continuity;
+    return { score, urgency, completion, continuity, fits, timeLeft };
   }
 
   // Score all eligible tasks
@@ -2640,8 +2653,8 @@ function renderAutoTab(body) {
         + (b.continuity ? ` + Continuity: +${b.continuity}` : '');
     } else {
       const a = card.breakdownA, bb = card.breakdownB;
-      bdHtml = `Task A: ${Math.round(a.score*10)/10} (${a.priBase}×${a.urgency}×${a.completion})`
-        + `<br>Task B: ${Math.round(bb.score*10)/10} (${bb.priBase}×${bb.urgency}×${bb.completion})`
+      bdHtml = `Task A: ${Math.round(a.score*10)/10} (${a.urgency}×${a.completion})`
+        + `<br>Task B: ${Math.round(bb.score*10)/10} (${bb.urgency}×${bb.completion})`
         + `<br>Combo bonus: +${card.comboBonus}`
         + (card.divBonus ? `<br>Diversity bonus: +${card.divBonus}` : '');
     }
@@ -3484,6 +3497,11 @@ const TZ_LIST = [
 
 // Store selected timezone — default to browser local
 let appTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// Restore saved timezone preference immediately (before auth/render)
+try {
+  const _lsRaw = localStorage.getItem('calapp_v1');
+  if (_lsRaw) { const _lsD = JSON.parse(_lsRaw); if (_lsD.appTimezone) appTimezone = _lsD.appTimezone; }
+} catch(e) {}
 
 function openSettings() {
   const overlay = document.getElementById('settings-overlay');
@@ -3531,10 +3549,17 @@ function updateTzLabel() {
 
 function applyTimezone(tz) {
   appTimezone = tz;
+  saveToStorage(); // persist immediately so it survives reload
   updateTzLabel();
-  // Re-parse any ICS-imported events is not needed (they're already stored in local time)
-  // Just re-render so any future time displays use the new tz
   render();
+  // Google Calendar events are stored with times already parsed at import time.
+  // Changing timezone only takes effect for future syncs — prompt user to re-sync.
+  const gcalConnected = calendars.some(c => c._gcalId);
+  if (gcalConnected) {
+    showToast('Timezone saved — re-sync Google Calendar to update event times');
+  } else {
+    showToast('Timezone saved');
+  }
 }
 
 // Convert a UTC date object to a time string HH:MM in the selected timezone
@@ -4509,9 +4534,25 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       const mnav = document.getElementById('mobile-nav');
       if (authOverlay) authOverlay.classList.add('hidden');
       if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = ''; appEl.style.opacity = ''; }
-      // timer-block stays hidden until the schedule panel is opened (docked-only now)
       if (mnav) mnav.style.display = '';
+
+      // Show cached data from localStorage immediately for instant first paint
+      const hasCached = loadFromStorage();
+      if (hasCached) { render(); renderSidebar(); renderTasks(); }
+
+      // Show a subtle loading indicator while fetching fresh data
+      const loadBanner = document.createElement('div');
+      loadBanner.id = 'loading-banner';
+      loadBanner.style.cssText = 'position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--accent),#7b8ff8,var(--accent));background-size:200% 100%;animation:loadbar 1.2s linear infinite;z-index:9998;';
+      document.head.insertAdjacentHTML('beforeend', '<style>@keyframes loadbar{0%{background-position:100% 0}100%{background-position:-100% 0}}</style>');
+      document.body.appendChild(loadBanner);
+
+      // Clear any inline display override left from signOut so CSS shows timer
+      const timerBlockEl = document.getElementById('timer-block');
+      if (timerBlockEl) timerBlockEl.style.display = '';
+
       await loadFromSupabase();
+      loadBanner.remove();
       render(); renderSidebar(); renderTasks();
       requestNotificationPermission().then(scheduleEventNotifications);
       await _flushUnsavedQueue();
@@ -4639,7 +4680,8 @@ async function loadFromSupabase() {
     title: t.title,
     notes: t.notes || '',
     due: t.due || '',
-    priority: t.priority || 'none',
+    dueTime: /^\d{2}:\d{2}/.test(t.priority || '') ? t.priority : '', // dueTime stored in priority col
+    priority: 'none',
     estMins: t.est_mins || 0,
     timeLeftMins: t.time_left_mins || 0,
     groupId: t.group_id || null,
@@ -4783,7 +4825,7 @@ async function dbSaveTask(task) {
     title: task.title,
     notes: task.notes || '',
     due: task.due || '',
-    priority: task.priority || 'none',
+    priority: task.dueTime || '', // repurposed: stores due time (HH:MM) or empty
     est_mins: task.estMins || 0,
     time_left_mins: task.timeLeftMins || 0,
     group_id: (task.groupId && typeof task.groupId === 'string' && task.groupId.includes('-')) ? task.groupId : null,
@@ -5164,6 +5206,131 @@ let _gcalToken = null;
 let _gcalUserEmail = 'Google Calendar';
 
 function startGoogleCalendarSync() {
+  // If calendars have already been synced, offer quick re-sync (skip picker)
+  const prevSynced = calendars.filter(c => c._gcalId && c._gcalEmail);
+  if (prevSynced.length > 0) {
+    _showSyncOptions(prevSynced);
+    return;
+  }
+  _startFullGcalSync();
+}
+
+function _showSyncOptions(prevSynced) {
+  const dlg = document.createElement('div');
+  dlg.id = 'gcal-sync-dlg';
+  dlg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center;';
+  dlg.innerHTML = `
+    <div style="background:var(--bg);border-radius:14px;padding:22px;width:300px;box-shadow:var(--sh-lg);">
+      <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;">Google Calendar</div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:18px;">You have ${prevSynced.length} synced calendar${prevSynced.length>1?'s':''}. What would you like to do?</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button id="gcal-resync-btn" style="padding:10px 14px;background:var(--accent);color:#fff;border:none;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;text-align:left;">
+          ↻ Update synced calendars
+          <div style="font-size:11px;font-weight:400;opacity:.8;margin-top:2px;">Pull new events from your ${prevSynced.length} existing calendar${prevSynced.length>1?'s':''}</div>
+        </button>
+        <button id="gcal-addnew-btn" style="padding:10px 14px;background:var(--bg2);color:var(--text);border:.5px solid var(--border);border-radius:9px;font-size:13px;cursor:pointer;text-align:left;">
+          + Add a different calendar
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">Sign in with another Google account</div>
+        </button>
+        <button onclick="document.getElementById('gcal-sync-dlg').remove()" style="padding:7px;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(dlg);
+
+  document.getElementById('gcal-resync-btn').onclick = () => {
+    dlg.remove();
+    _resyncExistingGcals(prevSynced);
+  };
+  document.getElementById('gcal-addnew-btn').onclick = () => {
+    dlg.remove();
+    _startFullGcalSync();
+  };
+}
+
+async function _resyncExistingGcals(prevSynced) {
+  // Group by email so we only need one OAuth token per account
+  const byEmail = {};
+  prevSynced.forEach(c => {
+    if (!byEmail[c._gcalEmail]) byEmail[c._gcalEmail] = [];
+    byEmail[c._gcalEmail].push(c);
+  });
+
+  const progress = document.createElement('div');
+  progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);';
+  progress.innerHTML = '<span id="gcal-resync-text">Connecting to Google…</span>';
+  document.body.appendChild(progress);
+
+  for (const [email, cals] of Object.entries(byEmail)) {
+    const setText = t => { const el = document.getElementById('gcal-resync-text'); if (el) el.textContent = t; };
+
+    // Get a fresh token (silent if possible, otherwise prompt)
+    await new Promise(resolve => {
+      const tc = google.accounts.oauth2.initTokenClient({
+        client_id: GCAL_CLIENT_ID,
+        scope: GCAL_SCOPES,
+        hint: email,
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error) { setText('Auth failed — ' + tokenResponse.error); setTimeout(resolve, 1500); return; }
+          _gcalToken = tokenResponse.access_token;
+          _gcalUserEmail = email;
+
+          const now = new Date();
+          const timeMin = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate()).toISOString();
+          const timeMax = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()).toISOString();
+          let newCount = 0;
+
+          for (const appCal of cals) {
+            setText(`Checking ${appCal.name}…`);
+            try {
+              let pageToken = null;
+              do {
+                let url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(appCal._gcalId)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=2500`;
+                if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
+                const res = await fetch(url, { headers: { Authorization: 'Bearer ' + _gcalToken } });
+                const data = await res.json();
+                if (data.error || !data.items) break;
+
+                for (const item of data.items) {
+                  if (item.status === 'cancelled') {
+                    // Remove cancelled events
+                    const idx = events.findIndex(e => e._gcalEventId === item.id);
+                    if (idx >= 0) { await dbDeleteEvent(events[idx]); events.splice(idx, 1); }
+                    continue;
+                  }
+                  // Skip already-imported events
+                  if (events.find(e => e._gcalEventId === item.id)) continue;
+
+                  let date, startTime, endTime, allDay = false;
+                  if (item.start.date) {
+                    date = item.start.date; allDay = true;
+                  } else if (item.start.dateTime) {
+                    const s = new Date(item.start.dateTime), e2 = new Date(item.end.dateTime);
+                    date = s.toISOString().slice(0,10);
+                    startTime = String(s.getHours()).padStart(2,'0')+':'+String(s.getMinutes()).padStart(2,'0');
+                    endTime   = String(e2.getHours()).padStart(2,'0')+':'+String(e2.getMinutes()).padStart(2,'0');
+                  }
+                  if (!date) continue;
+
+                  const newEv = { calId: appCal.id, title: item.summary||'(No title)', date, startTime: startTime||null, endTime: endTime||null, allDay, location: item.location||null, meet: item.hangoutLink||null, _gcalEventId: item.id, _gcalCalendarId: appCal._gcalId };
+                  events.push(newEv);
+                  await dbSaveEvent(newEv);
+                  newCount++;
+                }
+                pageToken = data.nextPageToken || null;
+              } while (pageToken);
+            } catch(e) { console.warn('Re-sync error', appCal.name, e); }
+          }
+          setText(newCount > 0 ? `Done — ${newCount} new event${newCount>1?'s':''} added` : 'Up to date — no new events');
+          setTimeout(() => { progress.remove(); render(); renderSidebar(); scheduleEventNotifications(); }, 2000);
+          resolve();
+        }
+      });
+      tc.requestAccessToken({ prompt: '' }); // no prompt = silent if possible
+    });
+  }
+}
+
+function _startFullGcalSync() {
   // Use Google Identity Services token client
   const tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GCAL_CLIENT_ID,
