@@ -3206,7 +3206,8 @@ function startEvDragTouch(e, ds, evIdx) {
   document.addEventListener('touchcancel', onEnd);
 }
 function _beginDrag(e, ds, evIdx) {
-  const dayEvs = eventsForDate(ds);
+  // Filter to timed events only — matches the renderer which skips events without startTime/endTime
+  const dayEvs = eventsForDate(ds).filter(e => e.startTime && e.endTime);
   const ev = dayEvs[evIdx];
   if (!ev || !ev.startTime || !ev.endTime) return;
   const globalEvRef = events.find(x => x === ev);
@@ -3239,6 +3240,7 @@ function _beginDrag(e, ds, evIdx) {
 
   // Mark block as dragging (raises z-index, keeps visible)
   blockEl.classList.add('dragging');
+  clearEventSelection(); // drop any prior selection so render() doesn't re-highlight it post-drag
 
   _drag = {
     ds, evIdx, ev, durMins, col,
@@ -3755,7 +3757,7 @@ function _recurrenceLabel(val) {
 // ══════════════════════════════════════════════════════════════
 
 function dblClickEvent(e, ds, evIdx) {
-  const dayEvs = eventsForDate(ds);
+  const dayEvs = eventsForDate(ds).filter(e => e.startTime && e.endTime);
   const ev = dayEvs[evIdx];
   if (!ev) return;
   // Scheduled blocks (AI scheduler or "Block" events) → unschedule immediately
@@ -4035,7 +4037,7 @@ async function cancelScheduledBlock(e, ds, evIdx) {
   e.stopPropagation();
   e.preventDefault();
 
-  const dayEvs = eventsForDate(ds);
+  const dayEvs = eventsForDate(ds).filter(e => e.startTime && e.endTime);
   const ev = dayEvs[evIdx];
   if (!ev || !ev._scheduled) return;
 
@@ -4264,7 +4266,7 @@ function startEvResize(e, ds, evIdx) {
   e.preventDefault();
   e.stopPropagation();
 
-  const dayEvs = eventsForDate(ds);
+  const dayEvs = eventsForDate(ds).filter(e => e.startTime && e.endTime);
   const ev = dayEvs[evIdx];
   if (!ev || !ev.startTime || !ev.endTime) return;
   const globalEvRef = events.find(x => x === ev);
@@ -4317,7 +4319,7 @@ function _renderPreservingScroll() {
 let _selectedEvRef = null; // direct reference to the currently-selected event
 
 function selectEventBlock(ds, evIdx) {
-  const dayEvs = eventsForDate(ds);
+  const dayEvs = eventsForDate(ds).filter(e => e.startTime && e.endTime);
   const ev = dayEvs[evIdx];
   if (!ev) { clearEventSelection(); return; }
   const ref = events.find(x => x === ev);
@@ -4703,10 +4705,41 @@ async function requestNotificationPermission() {
 
 function showNotifDeniedBanner() {
   if (document.getElementById('notif-denied-banner')) return;
+
+  // Detect browser and OS to give the right instructions
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const isAndroid = /Android/.test(ua);
+  const isFirefox = /Firefox/.test(ua);
+  const isEdge = /Edg\//.test(ua);
+  const isSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+
+  let link, label;
+  if (isIOS) {
+    link = 'https://support.apple.com/en-us/HT204079';
+    label = 'iOS Settings → Safari → Notifications';
+  } else if (isAndroid) {
+    link = 'https://support.google.com/chrome/answer/3220216';
+    label = 'Chrome Settings → Notifications';
+  } else if (isFirefox) {
+    link = 'https://support.mozilla.org/en-US/kb/push-notifications-firefox';
+    label = 'Firefox Preferences → Privacy → Notifications';
+  } else if (isEdge) {
+    link = 'https://support.microsoft.com/en-us/microsoft-edge/manage-website-notifications-in-microsoft-edge-0c555609-5bf2-479d-a59d-fb30a0b80b2b';
+    label = 'Edge Settings → Cookies & Site Permissions → Notifications';
+  } else if (isSafari) {
+    link = 'https://support.apple.com/guide/safari/customize-settings-for-a-website-sfri40732/mac';
+    label = 'Safari → Settings for This Website → Notifications';
+  } else {
+    // Chrome (desktop) or unknown
+    link = 'https://support.google.com/chrome/answer/3220216';
+    label = 'Chrome → click the 🔒 in the address bar → Notifications → Allow';
+  }
+
   const div = document.createElement('div');
   div.id = 'notif-denied-banner';
   div.className = 'notif-denied-banner';
-  div.innerHTML = `<i class="ti ti-bell-off"></i> Notifications are blocked — enable them in your <a href="https://support.apple.com/en-us/HT204079" target="_blank">device settings</a> to get event reminders.<button class="notif-dismiss" onclick="this.parentElement.remove()">✕</button>`;
+  div.innerHTML = `<i class="ti ti-bell-off"></i> Notifications are blocked — <a href="${link}" target="_blank">${label}</a><button class="notif-dismiss" onclick="this.parentElement.remove()">✕</button>`;
   const main = document.querySelector('.main');
   if (main) main.prepend(div);
 }
