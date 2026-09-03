@@ -3445,6 +3445,19 @@ async function applyDragRecurrenceScope(scope) {
 
   const { ev, startDelta, endDelta, newStartTime, newEndTime, newDate, oldDate } = pending;
 
+  // Helper: match events in the same recurring series even if recurId isn't set yet
+  // Falls back to matching by gcal master event ID so unpatched instances are caught
+  const _gcalMasterOf = e => e._gcalEventId ? e._gcalEventId.replace(/_\d{8}(T\d{6}Z?)?$/, '') : null;
+  const evMaster = _gcalMasterOf(ev);
+  const isSameSeries = e =>
+    (ev.recurId && e.recurId === ev.recurId) ||
+    (evMaster && _gcalMasterOf(e) === evMaster && evMaster !== e._gcalEventId);
+
+  // Also patch recurId on any newly-matched instances missing it
+  const ensureRecurId = e => {
+    if (ev.recurId && !e.recurId) { e.recurId = ev.recurId; e.recurrenceLabel = ev.recurrenceLabel || 'Recurring'; dbSaveEvent(e); }
+  };
+
   if (scope === 'this') {
     ev.startTime = newStartTime;
     ev.endTime = newEndTime;
@@ -3462,7 +3475,8 @@ async function applyDragRecurrenceScope(scope) {
     const toSave = [ev];
     events.forEach(e => {
       if (e === ev) return;
-      if (e.recurId === ev.recurId && e.date >= cutoff) {
+      if (isSameSeries(e) && e.date >= cutoff) {
+        ensureRecurId(e);
         e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
         e.endTime   = _minsToTimeStr(_timeStrToMins(e.endTime)   + endDelta);
         if (dayDelta !== 0) {
@@ -3484,7 +3498,8 @@ async function applyDragRecurrenceScope(scope) {
     const toSave = [ev];
     events.forEach(e => {
       if (e === ev) return;
-      if (e.recurId === ev.recurId) {
+      if (isSameSeries(e)) {
+        ensureRecurId(e);
         e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
         e.endTime   = _minsToTimeStr(_timeStrToMins(e.endTime)   + endDelta);
         if (dayDelta !== 0) {
