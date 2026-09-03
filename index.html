@@ -3822,6 +3822,22 @@ function openEditEvPopover(e, ds, evIdx) {
       recurSel.value = mapped;
       if (mapped === 'custom') document.getElementById('nep-custom-recur').classList.add('open');
     }
+  } else if (ev._gcalEventId && /_\d{8}(T\d{6}Z?)?$/.test(ev._gcalEventId)) {
+    // No recurId yet but the gcal event ID pattern shows it's a recurring instance
+    // (format: masterEventId_YYYYMMDDTHHMMSSZ) — show indicator and patch recurId
+    const old = recurSel.querySelector('option[value="gcal_recurring"]');
+    if (old) old.remove();
+    const opt = document.createElement('option');
+    opt.value = 'gcal_recurring';
+    opt.textContent = 'Repeating (Google Calendar)';
+    recurSel.appendChild(opt);
+    recurSel.value = 'gcal_recurring';
+    recurSel.disabled = true;
+    // Patch recurId in memory and DB so future edits/drags trigger the scope dialog
+    const masterBase = ev._gcalEventId.replace(/_\d{8}(T\d{6}Z?)?$/, '');
+    ev.recurId = 'gcal_' + masterBase;
+    ev.recurrenceLabel = 'Recurring';
+    dbSaveEvent(ev); // fire-and-forget
   } else {
     const old = recurSel.querySelector('option[value="gcal_recurring"]');
     if (old) old.remove();
