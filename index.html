@@ -3438,7 +3438,10 @@ async function applyDragRecurrenceScope(scope) {
     if (newDate) ev.date = newDate;
     await dbSaveEvent(ev);
   } else if (scope === 'future') {
-    // Move this instance to new date/time, shift time for other future occurrences
+    // Compute day delta so future instances shift by the same number of days
+    const dayDeltaMs = newDate ? (new Date(newDate) - new Date(oldDate)) : 0;
+    const dayDelta = Math.round(dayDeltaMs / 86400000); // in whole days
+
     if (newDate) ev.date = newDate;
     ev.startTime = newStartTime;
     ev.endTime = newEndTime;
@@ -3448,13 +3451,20 @@ async function applyDragRecurrenceScope(scope) {
       if (e === ev) return;
       if (e.recurId === ev.recurId && e.date >= cutoff) {
         e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
-        e.endTime = _minsToTimeStr(_timeStrToMins(e.endTime) + endDelta);
+        e.endTime   = _minsToTimeStr(_timeStrToMins(e.endTime)   + endDelta);
+        if (dayDelta !== 0) {
+          const d = new Date(e.date + 'T00:00:00');
+          d.setDate(d.getDate() + dayDelta);
+          e.date = dateStr(d.getFullYear(), d.getMonth(), d.getDate());
+        }
         toSave.push(e);
       }
     });
     await Promise.all(toSave.map(e => dbSaveEvent(e)));
   } else if (scope === 'all') {
-    // Move this instance to new date/time, shift time for all other occurrences
+    const dayDeltaMs = newDate ? (new Date(newDate) - new Date(oldDate)) : 0;
+    const dayDelta = Math.round(dayDeltaMs / 86400000);
+
     if (newDate) ev.date = newDate;
     ev.startTime = newStartTime;
     ev.endTime = newEndTime;
@@ -3463,7 +3473,12 @@ async function applyDragRecurrenceScope(scope) {
       if (e === ev) return;
       if (e.recurId === ev.recurId) {
         e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
-        e.endTime = _minsToTimeStr(_timeStrToMins(e.endTime) + endDelta);
+        e.endTime   = _minsToTimeStr(_timeStrToMins(e.endTime)   + endDelta);
+        if (dayDelta !== 0) {
+          const d = new Date(e.date + 'T00:00:00');
+          d.setDate(d.getDate() + dayDelta);
+          e.date = dateStr(d.getFullYear(), d.getMonth(), d.getDate());
+        }
         toSave.push(e);
       }
     });
