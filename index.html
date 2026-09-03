@@ -5326,8 +5326,16 @@ async function _resyncExistingGcals(prevSynced) {
                     if (idx >= 0) { await dbDeleteEvent(events[idx]); events.splice(idx, 1); }
                     continue;
                   }
-                  // Skip already-imported events
-                  if (events.find(e => e._gcalEventId === item.id)) continue;
+                  // Skip already-imported events — but patch recurId if it's missing
+                  const existing = events.find(e => e._gcalEventId === item.id);
+                  if (existing) {
+                    if (!existing.recurId && item.recurringEventId) {
+                      existing.recurId = 'gcal_' + item.recurringEventId;
+                      existing.recurrenceLabel = 'Recurring';
+                      await dbSaveEvent(existing);
+                    }
+                    continue;
+                  }
 
                   let date, startTime, endTime, allDay = false;
                   if (item.start.date) {
@@ -5539,9 +5547,16 @@ async function importSelectedGcals() {
 
           if (!date) continue;
 
-          // Skip duplicates
+          // Skip duplicates — but patch recurId if missing on existing event
           const exists = events.find(e => e._gcalEventId === item.id);
-          if (exists) continue;
+          if (exists) {
+            if (!exists.recurId && item.recurringEventId) {
+              exists.recurId = 'gcal_' + item.recurringEventId;
+              exists.recurrenceLabel = 'Recurring';
+              await dbSaveEvent(exists);
+            }
+            continue;
+          }
 
           const newEv = {
             calId: appCal.id,
