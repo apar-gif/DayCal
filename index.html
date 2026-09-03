@@ -3776,7 +3776,7 @@ function openEditEvPopover(e, ds, evIdx) {
   e.preventDefault();
   clearEventSelection();
 
-  const dayEvs = eventsForDate(ds);
+  const dayEvs = eventsForDate(ds).filter(e => e.startTime && e.endTime);
   const ev = dayEvs[evIdx];
   if (!ev) return;
   _editingEvRef = events.find(x => x === ev);
