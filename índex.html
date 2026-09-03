@@ -5427,7 +5427,7 @@ async function _resyncExistingGcals(prevSynced) {
                     date = item.start.date; allDay = true;
                   } else if (item.start.dateTime) {
                     const s = new Date(item.start.dateTime), e2 = new Date(item.end.dateTime);
-                    date = s.toISOString().slice(0,10);
+                    date = dateStr(s.getFullYear(), s.getMonth(), s.getDate());
                     startTime = String(s.getHours()).padStart(2,'0')+':'+String(s.getMinutes()).padStart(2,'0');
                     endTime   = String(e2.getHours()).padStart(2,'0')+':'+String(e2.getMinutes()).padStart(2,'0');
                   }
@@ -5625,7 +5625,8 @@ async function importSelectedGcals() {
           } else if (item.start.dateTime) {
             const start = new Date(item.start.dateTime);
             const end = new Date(item.end.dateTime);
-            date = start.toISOString().slice(0, 10);
+            // Use local date parts to match getHours() which is also local
+            date = dateStr(start.getFullYear(), start.getMonth(), start.getDate());
             startTime = String(start.getHours()).padStart(2,'0') + ':' + String(start.getMinutes()).padStart(2,'0');
             endTime = String(end.getHours()).padStart(2,'0') + ':' + String(end.getMinutes()).padStart(2,'0');
           }
