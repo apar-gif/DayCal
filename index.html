@@ -4549,10 +4549,6 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       document.head.insertAdjacentHTML('beforeend', '<style>@keyframes loadbar{0%{background-position:100% 0}100%{background-position:-100% 0}}</style>');
       document.body.appendChild(loadBanner);
 
-      // Clear any inline display override left from signOut so CSS shows timer
-      const timerBlockEl = document.getElementById('timer-block');
-      if (timerBlockEl) timerBlockEl.style.display = '';
-
       await loadFromSupabase();
       loadBanner.remove();
       render(); renderSidebar(); renderTasks();
@@ -5344,7 +5340,7 @@ async function _resyncExistingGcals(prevSynced) {
                   }
                   if (!date) continue;
 
-                  const newEv = { calId: appCal.id, title: item.summary||'(No title)', date, startTime: startTime||null, endTime: endTime||null, allDay, location: item.location||null, meet: item.hangoutLink||null, _gcalEventId: item.id, _gcalCalendarId: appCal._gcalId };
+                  const newEv = { calId: appCal.id, title: item.summary||'(No title)', date, startTime: startTime||null, endTime: endTime||null, allDay, location: item.location||null, meet: item.hangoutLink||null, _gcalEventId: item.id, _gcalCalendarId: appCal._gcalId, recurId: item.recurringEventId ? ('gcal_' + item.recurringEventId) : null, recurrenceLabel: item.recurringEventId ? 'Recurring' : null };
                   events.push(newEv);
                   await dbSaveEvent(newEv);
                   newCount++;
@@ -5557,7 +5553,10 @@ async function importSelectedGcals() {
             location: item.location || null,
             meet: item.hangoutLink || null,
             _gcalEventId: item.id,
-            _gcalCalendarId: calId
+            _gcalCalendarId: calId,
+            // Link recurring instances so DayCal's This/Future/All dialog works
+            recurId: item.recurringEventId ? ('gcal_' + item.recurringEventId) : null,
+            recurrenceLabel: item.recurringEventId ? 'Recurring' : null,
           };
           events.push(newEv);
           await dbSaveEvent(newEv);
