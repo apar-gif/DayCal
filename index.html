@@ -2976,6 +2976,8 @@ function _openPopover(anchorEl, ds, startTime, endTime) {
 
   _nepDate = ds;
   _nepCalId = null; // reset so each fresh open starts on first calendar
+  const nepDateEl = document.getElementById('nep-date');
+  if (nepDateEl) nepDateEl.value = ds;
 
   // ── Immediately create a placeholder (untitled) event so a block appears on the calendar right away ──
   const calId = (calendars.find(c => c.visible) || calendars[0])?.id || 1;
@@ -3436,9 +3438,14 @@ async function applyDragRecurrenceScope(scope) {
     if (newDate) ev.date = newDate;
     await dbSaveEvent(ev);
   } else if (scope === 'future') {
-    const cutoff = ev.date;
-    const toSave = [];
+    // Move this instance to new date/time, shift time for other future occurrences
+    if (newDate) ev.date = newDate;
+    ev.startTime = newStartTime;
+    ev.endTime = newEndTime;
+    const cutoff = oldDate || ev.date;
+    const toSave = [ev];
     events.forEach(e => {
+      if (e === ev) return;
       if (e.recurId === ev.recurId && e.date >= cutoff) {
         e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
         e.endTime = _minsToTimeStr(_timeStrToMins(e.endTime) + endDelta);
@@ -3447,8 +3454,13 @@ async function applyDragRecurrenceScope(scope) {
     });
     await Promise.all(toSave.map(e => dbSaveEvent(e)));
   } else if (scope === 'all') {
-    const toSave = [];
+    // Move this instance to new date/time, shift time for all other occurrences
+    if (newDate) ev.date = newDate;
+    ev.startTime = newStartTime;
+    ev.endTime = newEndTime;
+    const toSave = [ev];
     events.forEach(e => {
+      if (e === ev) return;
       if (e.recurId === ev.recurId) {
         e.startTime = _minsToTimeStr(_timeStrToMins(e.startTime) + startDelta);
         e.endTime = _minsToTimeStr(_timeStrToMins(e.endTime) + endDelta);
@@ -3794,7 +3806,9 @@ function openEditEvPopover(e, ds, evIdx) {
   document.getElementById('nep-location').value = ev.location || '';
   document.getElementById('nep-meet').value     = ev.meet || '';
   _nepDate  = ev.date;
-  _nepCalId = ev.calId; // calendar ids are UUID strings — don't parseInt
+  _nepCalId = ev.calId;
+  const _nepDateEl = document.getElementById('nep-date');
+  if (_nepDateEl) _nepDateEl.value = ev.date || '';
 
   // Recurrence — restore from recurrenceLabel if available
   const recurSel = document.getElementById('nep-recur');
@@ -5649,6 +5663,10 @@ async function importSelectedGcals() {
   <div class="nep-row">
     <div class="nep-label">Title</div>
     <input class="nep-input" id="nep-title" placeholder="Event title" maxlength="80" onkeydown="nepKey(event)"/>
+  </div>
+  <div class="nep-row">
+    <div class="nep-label">Date</div>
+    <input class="nep-input" id="nep-date" type="date" onchange="_nepDate=this.value"/>
   </div>
   <div class="nep-row">
     <div class="nep-label">Time</div>
