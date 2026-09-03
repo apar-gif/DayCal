@@ -3007,6 +3007,7 @@ function _openPopover(anchorEl, ds, startTime, endTime) {
   document.getElementById('nep-end').value = endTime;
   document.getElementById('nep-location').value = '';
   document.getElementById('nep-meet').value = '';
+  document.getElementById('nep-recur').disabled = false;
   document.getElementById('nep-recur').value = 'none';
   document.getElementById('nep-custom-recur').classList.remove('open');
   document.getElementById('nep-recur-interval').value = 1;
@@ -3795,12 +3796,38 @@ function openEditEvPopover(e, ds, evIdx) {
   _nepDate  = ev.date;
   _nepCalId = ev.calId; // calendar ids are UUID strings — don't parseInt
 
-  // Recurrence — just mark as none for editing (full recurrence edit is complex)
-  document.getElementById('nep-recur').value = 'none';
+  // Recurrence — restore from recurrenceLabel if available
+  const recurSel = document.getElementById('nep-recur');
   document.getElementById('nep-custom-recur').classList.remove('open');
   document.getElementById('nep-end-type').value = 'never';
   document.getElementById('nep-end-date').style.display = 'none';
   document.getElementById('nep-end-after-wrap').style.display = 'none';
+  if (ev.recurId) {
+    // Remove any previous gcal option
+    const old = recurSel.querySelector('option[value="gcal_recurring"]');
+    if (old) old.remove();
+    if (ev.recurId.startsWith('gcal_')) {
+      // Google Calendar recurring — show read-only indicator
+      const opt = document.createElement('option');
+      opt.value = 'gcal_recurring';
+      opt.textContent = 'Repeating (Google Calendar)';
+      recurSel.appendChild(opt);
+      recurSel.value = 'gcal_recurring';
+      recurSel.disabled = true;
+    } else {
+      // Native recurring — reverse-map recurrenceLabel back to dropdown value
+      const labelMap = { 'Daily':'daily','Weekly':'weekly','Biweekly':'biweekly','Monthly':'monthly','Annually':'annually','Every weekday (Mon–Fri)':'weekdays' };
+      const mapped = labelMap[ev.recurrenceLabel] || 'custom';
+      recurSel.disabled = false;
+      recurSel.value = mapped;
+      if (mapped === 'custom') document.getElementById('nep-custom-recur').classList.add('open');
+    }
+  } else {
+    const old = recurSel.querySelector('option[value="gcal_recurring"]');
+    if (old) old.remove();
+    recurSel.disabled = false;
+    recurSel.value = 'none';
+  }
 
   _renderNepCals(ev.calId); // pre-select event's calendar (UUID string)
 
