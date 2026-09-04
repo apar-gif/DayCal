@@ -1794,10 +1794,20 @@ function icsParseDateTime(v){
   // Floating time (no Z) — use as-is
   return{date,time:hh+':'+mm};
 }
-function confirmImport(){
-  const calId=parseInt(document.getElementById('import-target-cal').value);
-  parsedIcsEvents.forEach(ev=>{if(ev.date&&ev.title)events.push({calId,title:ev.title,date:ev.date,allDay:ev.allDay,startTime:ev.startTime||'',endTime:ev.endTime||''});});
+async function confirmImport(){
+  const calId=document.getElementById('import-target-cal').value; // never parseInt — UUID cal ids become NaN
+  const toSave=[];
+  parsedIcsEvents.forEach(ev=>{
+    if(!ev.date||!ev.title)return;
+    const newEv={calId,title:ev.title,date:ev.date,allDay:ev.allDay,startTime:ev.startTime||'',endTime:ev.endTime||''};
+    events.push(newEv);
+    toSave.push(newEv);
+  });
   closeImport();render();parsedIcsEvents=[];
+  if(toSave.length){
+    await Promise.all(toSave.map(e=>dbSaveEvent(e)));
+    showToast(`Imported ${toSave.length} event${toSave.length===1?'':'s'}`);
+  }
 }
 
 // ── Calendar helpers ──
@@ -3237,7 +3247,9 @@ function _beginDrag(e, ds, evIdx) {
       if (!e.recurId && e._gcalEventId && e._gcalEventId.replace(/_\d{8}(T\d{6}Z?)?$/, '') === masterBase) {
         e.recurId = sharedRecurId;
         e.recurrenceLabel = 'Recurring';
-        dbSaveEvent(e); // fire-and-forget
+        // NOT saved here — persistence happens in applyDragRecurrenceScope via
+        // dbSaveEventsBatched(). Firing ~100 un-awaited writes here was the bug:
+        // most never landed, so the series reverted on next load.
       }
     });
   }
@@ -3428,6 +3440,14 @@ function _timeStrToMins(t) {
   return h * 60 + m;
 }
 
+// If some rows failed to save, say so — a silent partial write is what made the
+// series look moved until the next reload.
+async function _reportFailedSaves(failed) {
+  if (failed && failed.length) {
+    showToast(`${failed.length} event${failed.length===1?'':'s'} failed to save — reload and try again`);
+  }
+}
+
 // ── Recurring event drag — ask which instances to shift ──
 let _pendingDragShift = null;
 
@@ -3447,11 +3467,19 @@ async function applyDragRecurrenceScope(scope) {
 
   // Helper: match events in the same recurring series even if recurId isn't set yet
   // Falls back to matching by gcal master event ID so unpatched instances are caught
-  const _gcalMasterOf = e => e._gcalEventId ? e._gcalEventId.replace(/_\d{8}(T\d{6}Z?)?$/, '') : null;
+  // Returns the master ID only for genuine expanded instances (id ends in _YYYYMMDD
+  // or _YYYYMMDDTHHMMSSZ). For IDs with no suffix — e.g. Exchange/Outlook events fed
+  // into Google — returns null, so the fallback simply doesn't apply instead of
+  // silently evaluating to false for every event.
+  const _gcalMasterOf = e => {
+    if (!e._gcalEventId) return null;
+    const m = /_\d{8}(T\d{6}Z?)?$/.exec(e._gcalEventId);
+    return m ? e._gcalEventId.slice(0, m.index) : null;
+  };
   const evMaster = _gcalMasterOf(ev);
   const isSameSeries = e =>
     (ev.recurId && e.recurId === ev.recurId) ||
-    (evMaster && _gcalMasterOf(e) === evMaster && evMaster !== e._gcalEventId);
+    (evMaster !== null && _gcalMasterOf(e) === evMaster);
 
   // Also patch recurId on any newly-matched instances missing it
   const ensureRecurId = e => {
@@ -3462,7 +3490,10 @@ async function applyDragRecurrenceScope(scope) {
     ev.startTime = newStartTime;
     ev.endTime = newEndTime;
     if (newDate) ev.date = newDate;
-    await dbSaveEvent(ev);
+    // Persist any recurId stamped onto siblings by _beginDrag, so the series stays
+    // coherent even when only this instance moved.
+    const backfill = events.filter(e => e !== ev && isSameSeries(e) && e.recurId === ev.recurId);
+    await _reportFailedSaves(await dbSaveEventsBatched([ev, ...backfill]));
   } else if (scope === 'future') {
     // Compute day delta so future instances shift by the same number of days
     const dayDeltaMs = newDate ? (new Date(newDate) - new Date(oldDate)) : 0;
@@ -3487,7 +3518,7 @@ async function applyDragRecurrenceScope(scope) {
         toSave.push(e);
       }
     });
-    await Promise.all(toSave.map(e => dbSaveEvent(e)));
+    await _reportFailedSaves(await dbSaveEventsBatched(toSave));
   } else if (scope === 'all') {
     const dayDeltaMs = newDate ? (new Date(newDate) - new Date(oldDate)) : 0;
     const dayDelta = Math.round(dayDeltaMs / 86400000);
@@ -3510,7 +3541,7 @@ async function applyDragRecurrenceScope(scope) {
         toSave.push(e);
       }
     });
-    await Promise.all(toSave.map(e => dbSaveEvent(e)));
+    await _reportFailedSaves(await dbSaveEventsBatched(toSave));
   }
 
   const _wrap = document.querySelector('.day-grid-wrap');
@@ -4883,7 +4914,7 @@ function scheduleEventNotifications() {
 
 
 async function dbSaveEvent(ev) {
-  if (!_supaUser) { saveToStorage(); return; }
+  if (!_supaUser) { saveToStorage(); return true; }
   const row = {
     user_id: _supaUser.id,
     cal_id: ev.calId,
@@ -4903,12 +4934,29 @@ async function dbSaveEvent(ev) {
   };
   if (ev._dbId) {
     const { error } = await _supa.from('events').update(row).eq('id', ev._dbId);
-    if (error) console.error('dbSaveEvent update error:', error.message, row);
+    if (error) { console.error('dbSaveEvent update error:', error.message, row); return false; }
+    return true;
   } else {
     const { data, error } = await _supa.from('events').insert(row).select().single();
-    if (error) { console.error('dbSaveEvent insert error:', error.message, row); return; }
+    if (error) { console.error('dbSaveEvent insert error:', error.message, row); return false; }
     if (data) ev._dbId = data.id;
+    return true;
   }
+}
+
+// Save many events without flooding the connection pool. Sequential batches of
+// BATCH, all awaited. Returns the events that failed so the caller can report.
+async function dbSaveEventsBatched(list, BATCH = 20) {
+  if (!_supaUser) { saveToStorage(); return []; }
+  const failed = [];
+  for (let i = 0; i < list.length; i += BATCH) {
+    const chunk = list.slice(i, i + BATCH);
+    const res = await Promise.allSettled(chunk.map(e => dbSaveEvent(e)));
+    res.forEach((r, j) => {
+      if (r.status === 'rejected' || r.value === false) failed.push(chunk[j]);
+    });
+  }
+  return failed;
 }
 
 async function dbDeleteEvent(ev) {
