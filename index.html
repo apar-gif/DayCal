@@ -3113,7 +3113,12 @@ async function saveNewEvPopover() {
           ...base, date, _recurInstance: true, _dbId: undefined
         }));
         recurInstances.forEach(ev => events.push(ev));
-        await Promise.all(recurInstances.map(ev => dbSaveEvent(ev)));
+        // Show the series immediately, then persist in awaited batches. The old
+        // code fired one request per instance (730 for a "never" weekly rule) and
+        // blocked render until every one settled, so nothing appeared on screen.
+        saveToStorage();
+        render();
+        await _reportFailedSaves(await dbSaveEventsBatched(recurInstances));
       }
     }
 
