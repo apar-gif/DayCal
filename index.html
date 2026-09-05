@@ -3765,6 +3765,9 @@ function onEndTypeChange() {
 }
 
 // Build recurrence rule object from popover state
+// How far ahead an open-ended ("Ends: Never") series is materialised.
+const RECUR_HORIZON_YEARS = 2;
+
 function _buildRecurRule(startDate) {
   const val = document.getElementById('nep-recur').value;
   if (val === 'none') return null;
@@ -3796,7 +3799,15 @@ function _buildRecurRule(startDate) {
   } else if (endType === 'after') {
     rule.count = Math.max(1, parseInt(document.getElementById('nep-end-after').value) || 10);
   } else {
-    rule.count = 730; // never = ~2 years worth (covers daily recurrence well beyond a month)
+    // "Ends: Never" = open-ended. Bound it by DATE, not by occurrence count.
+    // count:730 meant ~2 years for a daily rule but ~14 years for a weekly one
+    // (and ~60 for monthly), so a single series could balloon to 730 rows.
+    // A date horizon keeps every frequency to a comparable size.
+    const base = startDate || dateStr(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+    const [hy, hm, hd] = base.split('-').map(Number);
+    const h = new Date(hy, hm - 1, hd);
+    h.setFullYear(h.getFullYear() + RECUR_HORIZON_YEARS);
+    rule.endDate = dateStr(h.getFullYear(), h.getMonth(), h.getDate());
   }
 
   return rule;
