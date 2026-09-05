@@ -2934,10 +2934,72 @@ function nepPickCalSelect() {
 
 async function quickAddNow() {
   const n = new Date();
-  const startMins = _snapTo15(n.getHours() * 60 + n.getMinutes());
+  const rawNow    = n.getHours() * 60 + n.getMinutes();
+  const startMins = _snapTo15(rawNow);
   const endMins   = Math.min(startMins + 15, 23 * 60 + 45);
   const ds        = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
   const calId     = (calendars.find(c => c.visible) || calendars[0])?.id || null;
+
+  // ── Clear scheduled work that this interruption displaces ────────────────
+  // Something came up right now, so anything the scheduler had planned from this
+  // point until the next real commitment is no longer going to happen. Drop those
+  // blocks and hand their minutes back to their tasks so they can be re-scheduled.
+  const dayEvs = events
+    .filter(e => e.date === ds && e.startTime && e.endTime && !e.allDay)
+    .map(e => ({ e, s: timeToMins(e.startTime), en: timeToMins(e.endTime) }))
+    .sort((a, b) => a.s - b.s);
+
+  // The free run ends at the next fixed commitment (a real event, not a scheduled
+  // task block and not another Now block).
+  const boundary = dayEvs.find(x => x.s >= startMins && !x.e._scheduled && x.e.title !== 'Block');
+  const limit = boundary ? boundary.s : 24 * 60;
+
+  // The block currently in progress (started before now, ends after now).
+  const current = dayEvs.find(x => x.e._scheduled && x.s <= rawNow && rawNow < x.en);
+  // Scheduled blocks that haven't started yet, up to the next fixed commitment.
+  const later = dayEvs.filter(x => x.e._scheduled && x !== current && x.s >= startMins && x.s < limit);
+
+  const _releaseTask = (title, mins) => {
+    const t = tasks.find(x => x.title === title);
+    if (!t) return null;
+    if (mins > 0) t.timeLeftMins = Math.min((t.timeLeftMins || 0) + mins, t.estMins || Infinity);
+    t.scheduled = false;
+    t._partiallyScheduled = true;
+    return t;
+  };
+
+  const pendingSaves = [];
+
+  if (current) {
+    const t = tasks.find(x => x.title === current.e.title);
+    // Stop the clock but keep the progress — saveTimerProgress() owns timeLeftMins
+    // for the running task, so we must NOT add its unused minutes back or we'd
+    // overwrite the elapsed time the user actually put in.
+    if (t && timerTaskId == t.id) {
+      if (timerRunning) stopTimer();
+    } else if (t) {
+      // Never ran: give back only the part that hadn't happened yet.
+      _releaseTask(current.e.title, current.en - startMins);
+      pendingSaves.push(dbSaveTask(t));
+    }
+    if (current.s < startMins) {
+      // Keep the elapsed portion on the calendar as a record of work done.
+      current.e.endTime = _minsToTimeStr(startMins);
+      pendingSaves.push(dbSaveEvent(current.e));
+    } else {
+      await dbDeleteEvent(current.e);
+      const i = events.indexOf(current.e);
+      if (i >= 0) events.splice(i, 1);
+    }
+  }
+
+  for (const x of later) {
+    const t = _releaseTask(x.e.title, x.en - x.s);
+    if (t) pendingSaves.push(dbSaveTask(t));
+    await dbDeleteEvent(x.e);
+    const i = events.indexOf(x.e);
+    if (i >= 0) events.splice(i, 1);
+  }
 
   const ev = { calId, title: 'Block', date: ds, startTime: _minsToTimeStr(startMins), endTime: _minsToTimeStr(endMins), allDay: false };
   events.push(ev);
@@ -2949,12 +3011,20 @@ async function quickAddNow() {
     render();
   }
 
+  renderTasks();
+  // Recompute free slots so the gap after this block is immediately schedulable.
+  if (schedPanelOpen) { schedSlots = computeWeekSlots(); renderSchedPanel(); }
+
   requestAnimationFrame(() => {
     const wrap = document.querySelector('.day-grid-wrap');
     if (wrap) wrap.scrollTop = Math.max(0, (startMins - 30) * PX_PER_MIN);
   });
 
-  await dbSaveEvent(ev);
+  const freed = (current ? 1 : 0) + later.length;
+  if (freed) showToast(`Block added — ${freed} scheduled task${freed === 1 ? '' : 's'} released`);
+
+  pendingSaves.push(dbSaveEvent(ev));
+  await Promise.allSettled(pendingSaves);
 }
 
 function quickAddEvOnHour(e, ds, hour) {
