@@ -2359,8 +2359,11 @@ function computeWeekSlots() {
   const DAY_START = 6 * 60;  // 06:00
   const DAY_END = 21 * 60;   // 21:00
   const slots = [];
-  // Get Monday of current week
-  const todayD = new Date(now);
+  // Read the clock NOW, not the page-load `now`. The module-level `now` is set
+  // once at script load and never refreshed, so a tab left open for hours kept
+  // offering slots that had already passed (and broke across midnight).
+  const _now = new Date();
+  const todayD = new Date(_now);
   const dow = todayD.getDay(); // 0=Sun
   const monday = new Date(todayD);
   monday.setDate(todayD.getDate() - (dow === 0 ? 6 : dow - 1));
@@ -2386,7 +2389,7 @@ function computeWeekSlots() {
     if (isPast) continue;
 
     // For today, clamp effective start to current time (rounded up to next 5 min)
-    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const nowMins = _now.getHours() * 60 + _now.getMinutes();
     const effectiveStart = isToday ? Math.max(DAY_START, Math.ceil(nowMins / 5) * 5) : DAY_START;
 
     // Find gaps
@@ -4023,8 +4026,13 @@ let _savedDayScroll = 0;
 // Re-render when the calendar date rolls over past midnight
 setInterval(() => {
   const fresh = new Date();
-  if (fresh.toDateString() !== now.toDateString()) {
-    now = fresh;
+  const dateChanged = fresh.toDateString() !== now.toDateString();
+  // Always advance `now` — not only on a date change. It used to update solely at
+  // midnight rollover, so time-of-day stayed frozen at page load and anything
+  // reading it (notably the scheduler's "has this slot passed?" check) was stale
+  // by however long the tab had been open. Re-render only on a date change, as before.
+  now = fresh;
+  if (dateChanged) {
     render();
     scheduleEventNotifications();
   }
