@@ -3488,8 +3488,12 @@ async function applyDragRecurrenceScope(scope) {
 
   // Also patch recurId on any newly-matched instances missing it
   const ensureRecurId = e => {
-    if (ev.recurId && !e.recurId) { e.recurId = ev.recurId; e.recurrenceLabel = ev.recurrenceLabel || 'Recurring'; dbSaveEvent(e); }
+    // No save here — every event this touches is already in _toPersist and gets
+    // written by the batched save below. Saving here too doubled the write volume.
+    if (ev.recurId && !e.recurId) { e.recurId = ev.recurId; e.recurrenceLabel = ev.recurrenceLabel || 'Recurring'; }
   };
+
+  let _toPersist = [];
 
   if (scope === 'this') {
     ev.startTime = newStartTime;
@@ -3498,7 +3502,7 @@ async function applyDragRecurrenceScope(scope) {
     // Persist any recurId stamped onto siblings by _beginDrag, so the series stays
     // coherent even when only this instance moved.
     const backfill = events.filter(e => e !== ev && isSameSeries(e) && e.recurId === ev.recurId);
-    await _reportFailedSaves(await dbSaveEventsBatched([ev, ...backfill]));
+    _toPersist = [ev, ...backfill];
   } else if (scope === 'future') {
     // Compute day delta so future instances shift by the same number of days
     const dayDeltaMs = newDate ? (new Date(newDate) - new Date(oldDate)) : 0;
@@ -3523,7 +3527,7 @@ async function applyDragRecurrenceScope(scope) {
         toSave.push(e);
       }
     });
-    await _reportFailedSaves(await dbSaveEventsBatched(toSave));
+    _toPersist = toSave;
   } else if (scope === 'all') {
     const dayDeltaMs = newDate ? (new Date(newDate) - new Date(oldDate)) : 0;
     const dayDelta = Math.round(dayDeltaMs / 86400000);
@@ -3546,14 +3550,27 @@ async function applyDragRecurrenceScope(scope) {
         toSave.push(e);
       }
     });
-    await _reportFailedSaves(await dbSaveEventsBatched(toSave));
+    _toPersist = toSave;
   }
 
+  // Repaint BEFORE saving. Persistence must never gate the redraw — if a save
+  // throws, the user would otherwise be left looking at stale positions until a
+  // resize or week change happened to force a render.
   const _wrap = document.querySelector('.day-grid-wrap');
   const _savedScroll = _wrap ? _wrap.scrollTop : 0;
+  saveToStorage();
   render();
   const _wrapAfter = document.querySelector('.day-grid-wrap');
   if (_wrapAfter) _wrapAfter.scrollTop = _savedScroll;
+
+  if (_toPersist.length) {
+    try {
+      await _reportFailedSaves(await dbSaveEventsBatched(_toPersist));
+    } catch (err) {
+      console.error('applyDragRecurrenceScope save failed:', err);
+      showToast('Some changes may not have saved — reload to check');
+    }
+  }
 }
 
 function cancelDragRecurrence() {
