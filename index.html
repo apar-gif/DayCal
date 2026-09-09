@@ -2073,26 +2073,47 @@ function toggleTimer(){
   if(timerRunning)stopTimer();else startTimer();
 }
 
+// Wall-clock deadline for the running timer. Counting `timerSecondsLeft--` per tick
+// loses time whenever the browser throttles setInterval — which it does aggressively
+// for background tabs (often to once per MINUTE). Deriving the remaining time from a
+// timestamp means a throttled tick still computes the right value when it does fire.
+let timerEndsAt = null;
+
+function _timerSync(){
+  if(!timerRunning||timerEndsAt==null)return;
+  timerSecondsLeft=Math.max(0,Math.round((timerEndsAt-Date.now())/1000));
+  updateTimerDisplay();
+  if(timerSecondsLeft<=0){
+    stopTimer();
+    saveTimerProgress();
+    document.getElementById('timer-display').textContent='00:00';
+    showTimerCompleteModal();
+  }
+}
+
 function startTimer(){
   if(!timerTaskId||timerSecondsLeft<=0)return;
   timerRunning=true;
+  timerEndsAt=Date.now()+timerSecondsLeft*1000;
   document.getElementById('timer-play-icon').className='ti ti-player-pause';
   timerInterval=setInterval(()=>{
-    timerSecondsLeft--;
-    updateTimerDisplay();
-    if(timerSecondsLeft%5===0)saveTimerProgress();
-    if(timerSecondsLeft<=0){
-      stopTimer();
-      saveTimerProgress();
-      document.getElementById('timer-display').textContent='00:00';
-      showTimerCompleteModal();
-    }
+    _timerSync();
+    if(timerRunning&&timerSecondsLeft%5===0)saveTimerProgress();
   },1000);
   updateTimerDisplay();
 }
 
+// Re-sync the moment the tab becomes visible again, so the display is correct
+// immediately rather than at the next (possibly throttled) tick.
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden)_timerSync(); });
+window.addEventListener('focus',()=>_timerSync());
+
 function stopTimer(){
+  // Settle against the clock before stopping, so a throttled final tick doesn't
+  // discard elapsed time.
+  if(timerRunning&&timerEndsAt!=null)timerSecondsLeft=Math.max(0,Math.round((timerEndsAt-Date.now())/1000));
   timerRunning=false;
+  timerEndsAt=null;
   clearInterval(timerInterval);timerInterval=null;
   document.getElementById('timer-play-icon').className='ti ti-player-play';
   saveTimerProgress();
