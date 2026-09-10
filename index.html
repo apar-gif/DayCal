@@ -2579,7 +2579,10 @@ function scheduleManual(taskId, ceiling) {
 // ─── AUTO TAB ───
 function renderAutoTab(body) {
   const slot = schedSlots[schedSlotIndex];
-  const eligible = tasks.filter(t => !t.done && (t.estMins > 0 || t.timeLeftMins > 0));
+  // `!t.scheduled` was missing here (the manual tab has always had it), so fully
+  // scheduled tasks kept showing up in suggestions and combos and could be booked
+  // twice into different slots.
+  const eligible = tasks.filter(t => !t.done && !t.scheduled && (t.estMins > 0 || t.timeLeftMins > 0));
   if (eligible.length === 0) {
     body.innerHTML = `<div class="sched-empty"><i class="ti ti-check"></i>No tasks to schedule.</div>`;
     return;
@@ -4950,6 +4953,36 @@ async function loadFromSupabase() {
     scheduled: t.scheduled || false,
   }));
 
+  // Collapse duplicate rows created by the old _flushUnsavedQueue(), which forced a
+  // fresh insert for tasks that already existed. Duplicates are keyed on
+  // title + due + estMins. The surviving copy keeps scheduled/done if ANY copy had
+  // them set, so a scheduled task doesn't reappear as schedulable via its clone, and
+  // keeps the LOWEST timeLeftMins so timer progress isn't lost. Extra rows are
+  // deleted from Supabase so this self-heals instead of recurring every load.
+  const _seen = new Map();
+  const _dupes = [];
+  tasks.forEach(t => {
+    const key = `${t.title}||${t.due || ''}||${t.estMins || 0}`;
+    const keep = _seen.get(key);
+    if (!keep) { _seen.set(key, t); return; }
+    keep.scheduled = keep.scheduled || t.scheduled;
+    keep.done = keep.done || t.done;
+    if ((t.timeLeftMins || 0) < (keep.timeLeftMins || 0)) keep.timeLeftMins = t.timeLeftMins;
+    if (!keep.notes && t.notes) keep.notes = t.notes;
+    if (!keep.dueTime && t.dueTime) keep.dueTime = t.dueTime;
+    _dupes.push(t);
+  });
+  if (_dupes.length) {
+    tasks = [..._seen.values()];
+    const ids = _dupes.map(t => t._dbId).filter(Boolean);
+    for (let i = 0; i < ids.length; i += 20) {
+      try { await _supa.from('tasks').delete().in('id', ids.slice(i, i + 20)); }
+      catch (e) { console.error('dedupe delete error:', e); }
+    }
+    console.log(`Removed ${_dupes.length} duplicate task(s)`);
+    showToast(`Cleaned up ${_dupes.length} duplicate task${_dupes.length === 1 ? '' : 's'}`);
+  }
+
   groups = (groupsRes.data || []).map(g => ({ id: g.id, name: g.name, _dbId: g.id }));
 }
 
@@ -5178,10 +5211,25 @@ async function _flushUnsavedQueue() {
     let recovered = 0;
     for (const task of q) {
       delete task._queuedAt;
-      delete task._dbId; // force a fresh insert
-      task.id = null;
-      tasks.push(task);
-      await dbSaveTask(task);
+      // Do NOT force a fresh insert. _queueUnsavedTask() also queues UPDATE
+      // failures, so blindly inserting created a second row for a task that
+      // already existed in Supabase — and the new copy came back with
+      // scheduled:false, so it reappeared as schedulable. Keeping _dbId means
+      // dbSaveTask() does an UPDATE, which is idempotent.
+      const already = tasks.find(x =>
+        (task._dbId && x._dbId === task._dbId) ||
+        (x.title === task.title && (x.due || '') === (task.due || '')));
+      if (already) {
+        // Already present (loaded from Supabase or still in memory) — merge the
+        // queued values onto it rather than adding a duplicate.
+        Object.assign(already, { notes: task.notes, due: task.due, dueTime: task.dueTime,
+                                 estMins: task.estMins, timeLeftMins: task.timeLeftMins,
+                                 groupId: task.groupId });
+        await dbSaveTask(already);
+      } else {
+        tasks.push(task);
+        await dbSaveTask(task);
+      }
       recovered++;
     }
     if (recovered) {
