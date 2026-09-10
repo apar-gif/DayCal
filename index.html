@@ -410,6 +410,13 @@
   /* Scheduled event pill style */
   .event-pill.sched-event{background:transparent!important;border:.5px dashed currentColor!important;opacity:.9;}
   .day-ev-block.sched-ev-block{background:transparent!important;border:.5px dashed!important;}
+  /* Short blocks: one tight line, no crowding controls. */
+  .day-ev-block.tiny-ev-block{padding:1px 6px;font-size:10px;line-height:14px;display:flex;align-items:center;}
+  .day-ev-block.tiny-ev-block .day-ev-time,
+  .day-ev-block.tiny-ev-block .day-ev-meta,
+  .day-ev-block.tiny-ev-block .sched-cancel-btn,
+  .day-ev-block.tiny-ev-block .day-ev-resize{display:none;}
+  .day-ev-block.tiny-ev-block .day-ev-title{font-weight:600;}
 
   /* ── Click-to-create event ── */
   .hour-block{cursor:pointer;}
@@ -1927,7 +1934,13 @@ function buildDayColumn(ds, isT, opts){
     const startMin=sh*60+sm, endMin=eh*60+em;
     const dur=Math.max(endMin-startMin,15);
     const top=startMin*PX_PER_MIN_LOCAL;
-    const height=dur*PX_PER_MIN_LOCAL;
+    // A 5-minute block is ~4.7px tall — far less than the ~14px its title needs, so
+    // the text used to spill out and collide with neighbouring blocks. Give short
+    // blocks a floor height and a compact style. Their stored times are unchanged;
+    // only the drawn height is padded.
+    const rawHeight=dur*PX_PER_MIN_LOCAL;
+    const height=Math.max(rawHeight,17);
+    const tiny=rawHeight<22;
     const col = ev.title==='Block' ? '#9ca3af' : calColor(ev.calId);
     const timeLabel=`${ev.startTime}–${ev.endTime}`;
     const metaThreshold = compact ? 50 : 42;
@@ -1937,7 +1950,7 @@ function buildDayColumn(ds, isT, opts){
       if(ev.meet) m += `<a href="${ev.meet}" target="_blank" onclick="event.stopPropagation()"><i class="ti ti-video" style="font-size:9px;"></i>Join Meet</a>`;
       return m ? `<div class="day-ev-meta">${m}</div>` : '';
     })() : '';
-    evBlocks+=`<div class="day-ev-block${ev._scheduled?' sched-ev-block':''}"
+    evBlocks+=`<div class="day-ev-block${ev._scheduled?' sched-ev-block':''}${tiny?' tiny-ev-block':''}"
       data-ev-idx="${evIdx}" data-ds="${ds}"
       style="top:${top}px;height:${height}px;background:${col}22;border-left-color:${col};color:${col};"
       onmousedown="startEvDrag(event,'${ds}',${evIdx})"
@@ -1946,7 +1959,7 @@ function buildDayColumn(ds, isT, opts){
       <div class="day-ev-title">${ev.title?esc(ev.title):'<span style="opacity:.5;font-style:italic;">(No title)</span>'}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
       ${height>28?`<div class="day-ev-time">${timeLabel}</div>`:''}
       ${metaHtml}
-      ${'Notification' in window?`<button class="ev-bell-btn${_reminderOff(ev.id)?' bell-off':''}" onclick="event.stopPropagation();toggleReminder('${ev.id}')" title="${_reminderOff(ev.id)?'Reminders off — click to enable':'Reminders on — click to disable'}"><i class="ti ${_reminderOff(ev.id)?'ti-bell-off':'ti-bell'}"></i></button>`:''}
+      ${(!tiny&&'Notification' in window)?`<button class="ev-bell-btn${_reminderOff(ev.id)?' bell-off':''}" onclick="event.stopPropagation();toggleReminder('${ev.id}')" title="${_reminderOff(ev.id)?'Reminders off — click to enable':'Reminders on — click to disable'}"><i class="ti ${_reminderOff(ev.id)?'ti-bell-off':'ti-bell'}"></i></button>`:''}
       ${ev._scheduled?`<button class="sched-cancel-btn" onclick="confirmUnschedule(event,'${ds}',${evIdx})" title="Unschedule">✕</button>`:''}
       <div class="day-ev-resize" onmousedown="startEvResize(event,'${ds}',${evIdx})"></div>
     </div>`;
@@ -2074,7 +2087,7 @@ function toggleTimer(){
     // Pausing while a scheduled block is in progress: ask whether the remaining time
     // is coming back later today or should go back on the schedule list.
     const t=tasks.find(x=>x.id==timerTaskId);
-    if(_currentScheduledBlock()&&t){ showInterruptModal('pause',null,t.title); return; }
+    if(t){ showInterruptModal('pause',null,t.title); return; }
     stopTimer();
   } else {
     // Resuming after a "just pause": drop the remaining time in starting now.
@@ -2978,8 +2991,17 @@ function _currentScheduledBlock() {
   const n = new Date();
   const ds = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
   const raw = n.getHours() * 60 + n.getMinutes();
-  return events.find(e => e.date === ds && e._scheduled && e.startTime && e.endTime
-                       && timeToMins(e.startTime) <= raw && raw < timeToMins(e.endTime)) || null;
+  const today = events.filter(e => e.date === ds && e._scheduled && e.startTime && e.endTime);
+  // Prefer a block that actually spans right now...
+  const spanning = today.find(e => timeToMins(e.startTime) <= raw && raw < timeToMins(e.endTime));
+  if (spanning) return spanning;
+  // ...but if the timer is on a task whose block has already elapsed (or hasn't
+  // started), that block is still the one the user means.
+  if (timerTaskId) {
+    const t = tasks.find(x => x.id == timerTaskId);
+    if (t) return today.find(e => e.title === t.title) || null;
+  }
+  return null;
 }
 
 // Trim a block so it ends now, keeping the elapsed part as a record of work done.
@@ -3107,9 +3129,10 @@ async function quickAddNow() {
 
   // A task is mid-flight — ask before deciding its fate.
   const inProgress = _currentScheduledBlock();
-  if (inProgress && timerTaskId && timerRunning) {
-    const t = tasks.find(x => x.id == timerTaskId);
-    if (t) { showInterruptModal('now', ctx, t.title); return; }
+  if (inProgress || (timerTaskId && timerRunning)) {
+    const t = timerTaskId ? tasks.find(x => x.id == timerTaskId) : null;
+    const title = t ? t.title : (inProgress ? inProgress.title : null);
+    if (title) { showInterruptModal('now', ctx, title); return; }
   }
   return _quickAddNowApply(ctx, 'reschedule');
 }
