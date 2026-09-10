@@ -2070,7 +2070,17 @@ function onTimerTaskChange(){
 
 function toggleTimer(){
   if(!timerTaskId)return;
-  if(timerRunning)stopTimer();else startTimer();
+  if(timerRunning){
+    // Pausing while a scheduled block is in progress: ask whether the remaining time
+    // is coming back later today or should go back on the schedule list.
+    const t=tasks.find(x=>x.id==timerTaskId);
+    if(_currentScheduledBlock()&&t){ showInterruptModal('pause',null,t.title); return; }
+    stopTimer();
+  } else {
+    // Resuming after a "just pause": drop the remaining time in starting now.
+    if(_pausedResume&&_pausedResume.taskId==timerTaskId){ _resumePausedBlock(); }
+    startTimer();
+  }
 }
 
 // Wall-clock deadline for the running timer. Counting `timerSecondsLeft--` per tick
@@ -2956,6 +2966,136 @@ function nepPickCalSelect() {
   }
 }
 
+// ─── Interruption handling: pause vs reschedule ──────────────────────────────
+// Pressing Now, or pausing, while a scheduled task block is in progress raises the
+// same question: is this task coming back later today, or should its remaining time
+// go back on the schedule list? These two paths share one modal.
+let _pendingInterrupt = null;   // { source: 'now' | 'pause', ctx }
+let _pausedResume = null;       // { taskId, title, calId, remainingMins }
+
+// The scheduled block covering right now, if any.
+function _currentScheduledBlock() {
+  const n = new Date();
+  const ds = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
+  const raw = n.getHours() * 60 + n.getMinutes();
+  return events.find(e => e.date === ds && e._scheduled && e.startTime && e.endTime
+                       && timeToMins(e.startTime) <= raw && raw < timeToMins(e.endTime)) || null;
+}
+
+// Trim a block so it ends now, keeping the elapsed part as a record of work done.
+// Returns the minutes that were cut off (the part that didn't happen).
+function _truncateBlockAt(ev, atMins, pendingSaves) {
+  const s = timeToMins(ev.startTime), en = timeToMins(ev.endTime);
+  if (s < atMins) {
+    ev.endTime = _minsToTimeStr(atMins);
+    if (pendingSaves) pendingSaves.push(dbSaveEvent(ev));
+  } else {
+    const i = events.indexOf(ev);
+    if (i >= 0) events.splice(i, 1);
+    dbDeleteEvent(ev);
+  }
+  return Math.max(0, en - Math.max(s, atMins));
+}
+
+// Push scheduled blocks later so none overlap a newly placed block.
+function _cascadeScheduled(ds, fromMins, pendingSaves) {
+  let cursor = fromMins;
+  events.filter(e => e.date === ds && e._scheduled && e.startTime && e.endTime)
+        .sort((a, b) => timeToMins(a.startTime) - timeToMins(b.startTime))
+        .forEach(e => {
+          const s = timeToMins(e.startTime), en = timeToMins(e.endTime);
+          if (s >= cursor) { cursor = Math.max(cursor, en); return; }
+          if (en <= fromMins) return;           // already finished, leave alone
+          const dur = en - s;
+          e.startTime = _minsToTimeStr(cursor);
+          e.endTime   = _minsToTimeStr(Math.min(cursor + dur, 24 * 60 - 1));
+          cursor += dur;
+          if (pendingSaves) pendingSaves.push(dbSaveEvent(e));
+        });
+}
+
+function showInterruptModal(source, ctx, taskTitle) {
+  _pendingInterrupt = { source, ctx };
+  document.getElementById('interrupt-title').textContent =
+    source === 'now' ? 'Something came up' : 'Pause this task';
+  document.getElementById('interrupt-msg').textContent =
+    `"${taskTitle}" is in progress. What should happen to the time that's left?`;
+  document.getElementById('interrupt-pause-label').textContent =
+    source === 'now' ? "Pause — I'll resume after this block" : "Just pause — I'll resume later";
+  document.getElementById('interrupt-overlay').classList.add('open');
+}
+
+function cancelInterrupt() {
+  document.getElementById('interrupt-overlay').classList.remove('open');
+  _pendingInterrupt = null;
+}
+
+async function resolveInterrupt(choice) {
+  const pending = _pendingInterrupt;
+  document.getElementById('interrupt-overlay').classList.remove('open');
+  _pendingInterrupt = null;
+  if (!pending) return;
+  if (pending.source === 'now') await _quickAddNowApply(pending.ctx, choice);
+  else await _applyPauseChoice(choice);
+}
+
+// Pause button path.
+async function _applyPauseChoice(choice) {
+  const pendingSaves = [];
+  const n = new Date();
+  const atMins = _snapTo15(n.getHours() * 60 + n.getMinutes());
+  const block = _currentScheduledBlock();
+  const t = tasks.find(x => x.id == timerTaskId);
+
+  if (timerRunning) stopTimer();       // settles timerSecondsLeft against the clock
+  saveTimerProgress();                 // persists the elapsed progress
+
+  const remainingMins = Math.max(0, Math.ceil(timerSecondsLeft / 60));
+
+  if (block) _truncateBlockAt(block, atMins, pendingSaves);
+
+  if (choice === 'reschedule') {
+    if (t) {
+      t.scheduled = false;
+      t._partiallyScheduled = true;
+      pendingSaves.push(dbSaveTask(t));
+    }
+    _pausedResume = null;
+    showToast(`"${t ? t.title : 'Task'}" put back on the schedule list`);
+  } else {
+    _pausedResume = t ? { taskId: t.id, title: t.title, calId: block ? block.calId : null, remainingMins } : null;
+    showToast(`Paused — resume when ready and the block will move to that time`);
+  }
+
+  render(); renderTasks();
+  if (schedPanelOpen) { schedSlots = computeWeekSlots(); renderSchedPanel(); }
+  await Promise.allSettled(pendingSaves);
+}
+
+// Resume: place the remaining time starting now, and push later blocks out of the way.
+async function _resumePausedBlock() {
+  const info = _pausedResume;
+  _pausedResume = null;
+  if (!info || info.remainingMins <= 0) return;
+  const n = new Date();
+  const ds = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
+  const startMins = _snapTo15(n.getHours() * 60 + n.getMinutes());
+  const endMins = Math.min(startMins + info.remainingMins, 24 * 60 - 1);
+  const calId = info.calId || (calendars.find(c => c.visible) || calendars[0])?.id || null;
+
+  const pendingSaves = [];
+  const ev = { calId, title: info.title, date: ds,
+               startTime: _minsToTimeStr(startMins), endTime: _minsToTimeStr(endMins),
+               allDay: false, _scheduled: true };
+  events.push(ev);
+  pendingSaves.push(dbSaveEvent(ev));
+  _cascadeScheduled(ds, endMins, pendingSaves);
+
+  render(); renderTasks();
+  if (schedPanelOpen) { schedSlots = computeWeekSlots(); renderSchedPanel(); }
+  await Promise.allSettled(pendingSaves);
+}
+
 async function quickAddNow() {
   const n = new Date();
   const rawNow    = n.getHours() * 60 + n.getMinutes();
@@ -2963,6 +3103,20 @@ async function quickAddNow() {
   const endMins   = Math.min(startMins + 15, 23 * 60 + 45);
   const ds        = dateStr(n.getFullYear(), n.getMonth(), n.getDate());
   const calId     = (calendars.find(c => c.visible) || calendars[0])?.id || null;
+  const ctx = { rawNow, startMins, endMins, ds, calId };
+
+  // A task is mid-flight — ask before deciding its fate.
+  const inProgress = _currentScheduledBlock();
+  if (inProgress && timerTaskId && timerRunning) {
+    const t = tasks.find(x => x.id == timerTaskId);
+    if (t) { showInterruptModal('now', ctx, t.title); return; }
+  }
+  return _quickAddNowApply(ctx, 'reschedule');
+}
+
+async function _quickAddNowApply(ctx, choice) {
+  const { rawNow, startMins, endMins, ds, calId } = ctx;
+  const n = new Date();
 
   // ── Clear scheduled work that this interruption displaces ────────────────
   // Something came up right now, so anything the scheduler had planned from this
@@ -3001,9 +3155,19 @@ async function quickAddNow() {
     // overwrite the elapsed time the user actually put in.
     if (t && timerTaskId == t.id) {
       if (timerRunning) stopTimer();
-    } else if (t) {
+      saveTimerProgress();
+      if (choice === 'pause') {
+        // Coming back to this one after the block — hold its remaining time.
+        _pausedResume = { taskId: t.id, title: t.title, calId: current.e.calId,
+                          remainingMins: Math.max(0, Math.ceil(timerSecondsLeft / 60)) };
+      }
+    } else if (t && choice === 'reschedule') {
       // Never ran: give back only the part that hadn't happened yet.
       _releaseTask(current.e.title, current.en - startMins);
+      pendingSaves.push(dbSaveTask(t));
+    }
+    if (choice === 'reschedule' && t && timerTaskId == t.id) {
+      t.scheduled = false; t._partiallyScheduled = true;
       pendingSaves.push(dbSaveTask(t));
     }
     if (current.s < startMins) {
@@ -3017,7 +3181,8 @@ async function quickAddNow() {
     }
   }
 
-  for (const x of later) {
+  // On "pause" the later blocks are still going to happen — leave them be.
+  for (const x of (choice === 'pause' ? [] : later)) {
     const t = _releaseTask(x.e.title, x.en - x.s);
     if (t) pendingSaves.push(dbSaveTask(t));
     await dbDeleteEvent(x.e);
@@ -3044,8 +3209,12 @@ async function quickAddNow() {
     if (wrap) wrap.scrollTop = Math.max(0, (startMins - 30) * PX_PER_MIN);
   });
 
-  const freed = (current ? 1 : 0) + later.length;
-  if (freed) showToast(`Block added — ${freed} scheduled task${freed === 1 ? '' : 's'} released`);
+  if (choice === 'pause') {
+    showToast(`Block added — resume when ready and the rest will move to that time`);
+  } else {
+    const freed = (current ? 1 : 0) + later.length;
+    if (freed) showToast(`Block added — ${freed} scheduled task${freed === 1 ? '' : 's'} released`);
+  }
 
   pendingSaves.push(dbSaveEvent(ev));
   await Promise.allSettled(pendingSaves);
@@ -4740,7 +4909,7 @@ async function authSubmit() {
       return;
     }
     try {
-      const { data, error } = await _supa.auth.signUp({ email, password, options: { emailRedirectTo: 'https://apar-gif.github.io/DayCal' } });
+      const { data, error } = await _supa.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/') } });
       if (error) { err.textContent = error.message; return; }
       // If user already exists but unconfirmed, data.user will exist with identities=[]
       if (data?.user?.identities?.length === 0) {
@@ -4770,7 +4939,7 @@ async function authForgot() {
   const err   = document.getElementById('auth-err');
   if (!email) { err.textContent = 'Enter your email first.'; return; }
   const { error } = await _supa.auth.resetPasswordForEmail(email, {
-    redirectTo: 'https://apar-gif.github.io/DayCal'
+    redirectTo: window.location.origin + window.location.pathname.replace(/\/[^/]*$/, '/')
   });
   if (error) { err.textContent = error.message; return; }
   err.style.color = 'var(--accent)';
@@ -6081,6 +6250,19 @@ async function importSelectedGcals() {
   </div>
 </div>
 
+<div class="settings-overlay" id="interrupt-overlay" onclick="if(event.target===this)cancelInterrupt()">
+  <div class="settings-dialog" style="width:320px;">
+    <div class="settings-title">
+      <span><i class="ti ti-player-pause" style="margin-right:7px;color:var(--accent);"></i><span id="interrupt-title">Task in progress</span></span>
+      <button onclick="cancelInterrupt()"><i class="ti ti-x"></i></button>
+    </div>
+    <div id="interrupt-msg" style="font-size:13px;color:var(--text2);margin-bottom:16px;"></div>
+    <div style="display:flex;flex-direction:column;gap:7px;">
+      <button onclick="resolveInterrupt('pause')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;"><span id="interrupt-pause-label">Just pause — I'll resume later</span></button>
+      <button onclick="resolveInterrupt('reschedule')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--accent);background:none;color:var(--accent);cursor:pointer;font-size:13px;">Reschedule it — put the remaining time back</button>
+    </div>
+  </div>
+</div>
 <div class="settings-overlay" id="drag-recur-overlay" onclick="if(event.target===this)cancelDragRecurrence()">
   <div class="settings-dialog" style="width:300px;">
     <div class="settings-title">
@@ -6123,7 +6305,7 @@ async function importSelectedGcals() {
     <div class="auth-switch" id="auth-switch-text">Don't have an account? <span onclick="toggleAuthMode()">Sign up</span></div>
     <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--text3);">
       By signing up you agree to our
-      <a href="https://apar-gif.github.io/DayCal/privacy.html" target="_blank" style="color:var(--accent);text-decoration:none;">Privacy Policy & Terms</a>
+      <a href="privacy.html" target="_blank" style="color:var(--accent);text-decoration:none;">Privacy Policy & Terms</a>
     </div>
   </div>
 </div>
