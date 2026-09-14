@@ -1953,13 +1953,14 @@ function buildDayColumn(ds, isT, opts){
     const col = ev._scheduled ? _ink
               : (ev.title==='Block' ? '#9ca3af' : calColor(ev.calId));
     // Dot grid at ~7px. Below ~22px tall the dots are noise, so use a flat tint.
-    // Dots use the app accent (indigo) rather than the calendar colour, so every
-    // scheduled block reads as "planned work" at a glance regardless of which
-    // calendar it belongs to. The left rail still carries the calendar colour.
-    const SCHED_DOT = '#4361ee';
+    // Scheduled task blocks are entirely indigo — dots, wash, rail and text — so
+    // "planned work" reads as one consistent thing regardless of which calendar the
+    // task came from. Dots at 40% alpha over a 7% wash, tiled every 7px.
+    const schedCol = '#4361ee';
+    const blockCol = ev._scheduled ? schedCol : col;
     const bg = ev._scheduled
-      ? (tiny ? `${SCHED_DOT}26`
-              : `radial-gradient(${SCHED_DOT}66 1px, ${SCHED_DOT}12 1px) 0 0 / 7px 7px`)
+      ? (tiny ? `${schedCol}26`
+              : `radial-gradient(${schedCol}66 1px, ${schedCol}12 1px) 0 0 / 7px 7px`)
       : `${col}22`;
     const timeLabel=`${ev.startTime}–${ev.endTime}`;
     const metaThreshold = compact ? 50 : 42;
@@ -1971,7 +1972,7 @@ function buildDayColumn(ds, isT, opts){
     })() : '';
     evBlocks+=`<div class="day-ev-block${ev._scheduled?' sched-ev-block':''}${tiny?' tiny-ev-block':''}"
       data-ev-idx="${evIdx}" data-ds="${ds}"
-      style="top:${top}px;height:${height}px;background:${bg};border-left-color:${col};color:${col};"
+      style="top:${top}px;height:${height}px;background:${bg};border-left-color:${blockCol};color:${blockCol};"
       onmousedown="startEvDrag(event,'${ds}',${evIdx})"
       ontouchstart="startEvDragTouch(event,'${ds}',${evIdx})"
       ondblclick="dblClickEvent(event,'${ds}',${evIdx})">
