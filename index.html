@@ -409,9 +409,9 @@
   .task-unsched-btn:hover{background:var(--danger-bg);color:var(--danger);}
   /* Scheduled event pill style */
   .event-pill.sched-event{background:transparent!important;border:.5px dashed currentColor!important;opacity:.9;}
-  /* Scheduled task blocks: dot-grid fill is set inline (per-calendar colour); the
-     only thing CSS adds is the hairline outline that marks them as planned. */
-  .day-ev-block.sched-ev-block{border:.5px solid!important;}
+  /* Scheduled task blocks: no outline — just a heavier left rail against a faint
+     fill, so they sit quieter than real commitments but keep their calendar colour. */
+  .day-ev-block.sched-ev-block{border-left-width:4px!important;border-top:none!important;border-right:none!important;border-bottom:none!important;}
   /* Short blocks: one tight line, no crowding controls. */
   .day-ev-block.tiny-ev-block{padding:0 6px;font-size:9px;line-height:1;display:flex;align-items:center;overflow:hidden;}
   .day-ev-block.tiny-ev-block .day-ev-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1943,14 +1943,10 @@ function buildDayColumn(ds, isT, opts){
     const height=dur*PX_PER_MIN_LOCAL;
     const tiny=height<22;
     const col = ev.title==='Block' ? '#9ca3af' : calColor(ev.calId);
-    // Scheduled task blocks get a dot grid instead of a flat fill, so they read as
-    // planned rather than committed. Built here (not in CSS) because the colour is
-    // per-calendar; a ::before overlay fought the block's own z-index and vanished.
-    // Below ~22px the dots are noise, so fall back to a flat tint.
-    const bg = ev._scheduled
-      ? (tiny ? `${col}26`
-              : `radial-gradient(${col}66 1px, ${col}12 1px) 0 0 / 7px 7px`)
-      : `${col}22`;
+    // Scheduled task blocks: near-transparent fill, with the weight carried by a
+    // thicker left rail. Degrades well at any height — a 5-minute block still shows
+    // a full-height rail, where a pattern would just be noise.
+    const bg = ev._scheduled ? `${col}0f` : `${col}22`;
     const timeLabel=`${ev.startTime}–${ev.endTime}`;
     const metaThreshold = compact ? 50 : 42;
     const metaHtml = height > metaThreshold ? (()=>{
