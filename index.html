@@ -2430,15 +2430,15 @@ function computeWeekSlots() {
   // offering slots that had already passed (and broke across midnight).
   const _now = new Date();
   const todayD = new Date(_now);
-  const dow = todayD.getDay(); // 0=Sun
-  const monday = new Date(todayD);
-  monday.setDate(todayD.getDate() - (dow === 0 ? 6 : dow - 1));
-
+  // Rolling 7 days from TODAY, not Mon–Sun of the calendar week. The old version
+  // built the current week then skipped past days, so on a Sunday evening every
+  // day but today was already behind us and the panel said "no free slots this
+  // week" — correct, but useless. A rolling window always offers a full week ahead.
   for (let i = 0; i < 7; i++) {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
+    const d = new Date(todayD);
+    d.setDate(todayD.getDate() + i);
     const ds = dateStr(d.getFullYear(), d.getMonth(), d.getDate());
-    const dayName = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i];
+    const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
 
     // Get visible events for this day
     const dayEvs = events.filter(e => {
@@ -2463,13 +2463,13 @@ function computeWeekSlots() {
     for (const ev of dayEvs) {
       if (ev.start > cursor) {
         const dur = ev.start - cursor;
-        if (dur >= 15) slots.push({ date: ds, dayName, dayFull: fullDayName(i), startMins: cursor, endMins: ev.start, durMins: dur });
+        if (dur >= 15) slots.push({ date: ds, dayName, dayFull: fullDayName(d.getDay() === 0 ? 6 : d.getDay() - 1), startMins: cursor, endMins: ev.start, durMins: dur });
       }
       if (ev.end > cursor) cursor = ev.end;
     }
     if (cursor < DAY_END) {
       const dur = DAY_END - cursor;
-      if (dur >= 15) slots.push({ date: ds, dayName, dayFull: fullDayName(i), startMins: cursor, endMins: DAY_END, durMins: dur });
+      if (dur >= 15) slots.push({ date: ds, dayName, dayFull: fullDayName(d.getDay() === 0 ? 6 : d.getDay() - 1), startMins: cursor, endMins: DAY_END, durMins: dur });
     }
   }
   return slots;
