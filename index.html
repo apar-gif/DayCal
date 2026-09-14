@@ -1953,9 +1953,13 @@ function buildDayColumn(ds, isT, opts){
     const col = ev._scheduled ? _ink
               : (ev.title==='Block' ? '#9ca3af' : calColor(ev.calId));
     // Dot grid at ~7px. Below ~22px tall the dots are noise, so use a flat tint.
+    // Dots use the app accent (indigo) rather than the calendar colour, so every
+    // scheduled block reads as "planned work" at a glance regardless of which
+    // calendar it belongs to. The left rail still carries the calendar colour.
+    const SCHED_DOT = '#4361ee';
     const bg = ev._scheduled
-      ? (tiny ? `${col}26`
-              : `radial-gradient(${col}66 1px, ${col}12 1px) 0 0 / 7px 7px`)
+      ? (tiny ? `${SCHED_DOT}26`
+              : `radial-gradient(${SCHED_DOT}66 1px, ${SCHED_DOT}12 1px) 0 0 / 7px 7px`)
       : `${col}22`;
     const timeLabel=`${ev.startTime}–${ev.endTime}`;
     const metaThreshold = compact ? 50 : 42;
