@@ -412,6 +412,10 @@
   /* Scheduled task blocks: no outline — just a heavier left rail against a faint
      fill, so they sit quieter than real commitments but keep their calendar colour. */
   .day-ev-block.sched-ev-block{border-left-width:4px!important;border-top:none!important;border-right:none!important;border-bottom:none!important;}
+  /* Marker glyph on scheduled blocks. Hidden on tiny blocks — at 5px tall the icon
+     alone would crowd out the title. */
+  .sched-marker{font-size:10px;margin-right:3px;opacity:.75;vertical-align:-1px;}
+  .day-ev-block.tiny-ev-block .sched-marker{display:none;}
   /* Short blocks: one tight line, no crowding controls. */
   .day-ev-block.tiny-ev-block{padding:0 6px;font-size:9px;line-height:1;display:flex;align-items:center;overflow:hidden;}
   .day-ev-block.tiny-ev-block .day-ev-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -1961,7 +1965,7 @@ function buildDayColumn(ds, isT, opts){
       onmousedown="startEvDrag(event,'${ds}',${evIdx})"
       ontouchstart="startEvDragTouch(event,'${ds}',${evIdx})"
       ondblclick="dblClickEvent(event,'${ds}',${evIdx})">
-      <div class="day-ev-title">${ev.title?esc(ev.title):'<span style="opacity:.5;font-style:italic;">(No title)</span>'}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
+      <div class="day-ev-title">${ev._scheduled?`<i class="ti ti-circle-dashed sched-marker" title="Scheduled task"></i>`:''}${ev.title?esc(ev.title):'<span style="opacity:.5;font-style:italic;">(No title)</span>'}${ev.recurrenceLabel?` <span class="recur-dot" title="${ev.recurrenceLabel}">↻</span>`:''}</div>
       ${height>28?`<div class="day-ev-time">${timeLabel}</div>`:''}
       ${metaHtml}
       ${(!tiny&&'Notification' in window)?`<button class="ev-bell-btn${_reminderOff(ev.id)?' bell-off':''}" onclick="event.stopPropagation();toggleReminder('${ev.id}')" title="${_reminderOff(ev.id)?'Reminders off — click to enable':'Reminders on — click to disable'}"><i class="ti ${_reminderOff(ev.id)?'ti-bell-off':'ti-bell'}"></i></button>`:''}
