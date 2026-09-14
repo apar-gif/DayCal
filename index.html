@@ -409,9 +409,17 @@
   .task-unsched-btn:hover{background:var(--danger-bg);color:var(--danger);}
   /* Scheduled event pill style */
   .event-pill.sched-event{background:transparent!important;border:.5px dashed currentColor!important;opacity:.9;}
-  .day-ev-block.sched-ev-block{background:transparent!important;border:.5px dashed!important;}
+  /* Scheduled task blocks: diagonal hatch reads as "planned, not committed".
+     The hatch is a ::before layer at z-index -1 so the label stays full opacity;
+     currentColor picks up the calendar colour set inline on the block. */
+  .day-ev-block.sched-ev-block{background:transparent!important;border:.5px solid!important;position:relative;}
+  .day-ev-block.sched-ev-block::before{content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;
+    background:repeating-linear-gradient(45deg,transparent 0 4px,currentColor 4px 7px);opacity:.16;}
+  /* At a few px tall the hatch is just noise — fall back to a flat tint. */
+  .day-ev-block.sched-ev-block.tiny-ev-block::before{background:currentColor;opacity:.13;}
   /* Short blocks: one tight line, no crowding controls. */
-  .day-ev-block.tiny-ev-block{padding:1px 6px;font-size:10px;line-height:14px;display:flex;align-items:center;}
+  .day-ev-block.tiny-ev-block{padding:0 6px;font-size:9px;line-height:1;display:flex;align-items:center;overflow:hidden;}
+  .day-ev-block.tiny-ev-block .day-ev-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .day-ev-block.tiny-ev-block .day-ev-time,
   .day-ev-block.tiny-ev-block .day-ev-meta,
   .day-ev-block.tiny-ev-block .sched-cancel-btn,
@@ -1934,13 +1942,11 @@ function buildDayColumn(ds, isT, opts){
     const startMin=sh*60+sm, endMin=eh*60+em;
     const dur=Math.max(endMin-startMin,15);
     const top=startMin*PX_PER_MIN_LOCAL;
-    // A 5-minute block is ~4.7px tall — far less than the ~14px its title needs, so
-    // the text used to spill out and collide with neighbouring blocks. Give short
-    // blocks a floor height and a compact style. Their stored times are unchanged;
-    // only the drawn height is padded.
-    const rawHeight=dur*PX_PER_MIN_LOCAL;
-    const height=Math.max(rawHeight,17);
-    const tiny=rawHeight<22;
+    // Height is exactly proportional to duration — never padded, or a block would
+    // occupy more of the day than it actually takes. Short blocks instead get a
+    // compact style (tiny-ev-block) so their label fits the space available.
+    const height=dur*PX_PER_MIN_LOCAL;
+    const tiny=height<22;
     const col = ev.title==='Block' ? '#9ca3af' : calColor(ev.calId);
     const timeLabel=`${ev.startTime}–${ev.endTime}`;
     const metaThreshold = compact ? 50 : 42;
@@ -2024,9 +2030,20 @@ function populateTimerSelect(){
     tasks.filter(t=>!t.done&&t.estMins>0).map(t=>`<option value="${t.id}">${t.title} (${formatEst(t.timeLeftMins!=null?t.timeLeftMins:t.estMins)})</option>`).join('');
   // Restore previous selection
   if(prev)sel.value=String(prev);
-  // If selected task no longer exists or is done, reset
+  // If selected task no longer exists or is done, reset.
+  // Clear state INLINE rather than calling stopTimer(): stopTimer() calls
+  // renderTasks() → populateTimerSelect() → and with timerTaskId still pointing at
+  // the missing task it recursed until the stack overflowed.
   if(timerTaskId&&!tasks.find(t=>t.id==timerTaskId&&!t.done)){
-    stopTimer();timerTaskId=null;timerSecondsLeft=0;updateTimerDisplay();
+    timerRunning=false;
+    timerEndsAt=null;
+    if(timerInterval){clearInterval(timerInterval);timerInterval=null;}
+    if(timerScheduledTimeout){clearTimeout(timerScheduledTimeout);timerScheduledTimeout=null;}
+    timerTaskId=null;
+    timerSecondsLeft=0;
+    const _ic=document.getElementById('timer-play-icon');
+    if(_ic)_ic.className='ti ti-player-play';
+    updateTimerDisplay();
   }
 }
 
@@ -2131,7 +2148,11 @@ function startTimer(){
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden)_timerSync(); });
 window.addEventListener('focus',()=>_timerSync());
 
+let _inStopTimer=false;
 function stopTimer(){
+  if(_inStopTimer)return;   // guard: stopTimer → renderTasks → populateTimerSelect
+  _inStopTimer=true;
+  try{
   // Settle against the clock before stopping, so a throttled final tick doesn't
   // discard elapsed time.
   if(timerRunning&&timerEndsAt!=null)timerSecondsLeft=Math.max(0,Math.round((timerEndsAt-Date.now())/1000));
@@ -2147,6 +2168,7 @@ function stopTimer(){
     const t = tasks.find(x => x.id == timerTaskId);
     if (t) dbSaveTask(t);
   }
+  }finally{_inStopTimer=false;}
 }
 
 function resetTimer(){
@@ -2825,8 +2847,13 @@ async function applySchedule(actions) {
       document.getElementById('timer-play-btn').disabled = false;
       updateTimerEst(timerTask);
 
-      const nowDayMins2 = new Date().getHours() * 60 + new Date().getMinutes() + new Date().getSeconds() / 60;
-      const msUntilStart = Math.round((slot.startMins - nowDayMins2) * 60 * 1000);
+      // Compare full DATES, not just time-of-day. slot.startMins is minutes since
+      // midnight ON THE SLOT'S OWN DAY, so subtracting today's minutes made a
+      // tomorrow-morning slot look like it was hours in the past — and the timer
+      // started immediately instead of waiting.
+      const _slotStart = new Date(slot.date + 'T00:00:00');
+      _slotStart.setMinutes(_slotStart.getMinutes() + slot.startMins);
+      const msUntilStart = _slotStart.getTime() - Date.now();
 
       if (msUntilStart > 5000) {
         // Slot is in the future — show pending state, don't start yet
@@ -3201,6 +3228,18 @@ async function _quickAddNowApply(ctx, choice) {
       await dbDeleteEvent(current.e);
       const i = events.indexOf(current.e);
       if (i >= 0) events.splice(i, 1);
+    }
+  }
+
+  // The modal can fire for a running timer whose block doesn't span this exact
+  // minute, in which case `current` above is null and nothing stopped the clock.
+  if (choice === 'pause' && timerRunning) {
+    stopTimer();
+    saveTimerProgress();
+    if (!_pausedResume && timerTaskId) {
+      const t2 = tasks.find(x => x.id == timerTaskId);
+      if (t2) _pausedResume = { taskId: t2.id, title: t2.title, calId,
+                                remainingMins: Math.max(0, Math.ceil(timerSecondsLeft / 60)) };
     }
   }
 
