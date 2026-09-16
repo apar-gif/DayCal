@@ -2436,8 +2436,8 @@ function toggleSchedPanel() {
 
 // ── Compute free slots for current week ──
 function computeWeekSlots() {
-  const DAY_START = 6 * 60;  // 06:00
-  const DAY_END = 21 * 60;   // 21:00
+  const DAY_START = 1;            // 00:01
+  const DAY_END = 23 * 60 + 59;   // 23:59
   const slots = [];
   // Read the clock NOW, not the page-load `now`. The module-level `now` is set
   // once at script load and never refreshed, so a tab left open for hours kept
