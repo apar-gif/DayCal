@@ -3135,6 +3135,47 @@ async function _applyPauseChoice(choice) {
   await Promise.allSettled(pendingSaves);
 }
 
+// Called when the user chooses "pause, resume after this block" from the Now button.
+// The remaining time is placed immediately after the Now block rather than waiting
+// for a manual resume, and the timer re-arms itself for that moment.
+async function _placeResumeAfterBlock(ctx, remainingMins, task, pendingSaves) {
+  if (!task || remainingMins <= 0) return;
+  const { ds, endMins, calId } = ctx;
+  const startMins = endMins;                       // starts the moment the Now block ends
+  const endM = Math.min(startMins + remainingMins, 24 * 60 - 1);
+
+  const ev = { calId: calId, title: task.title, date: ds,
+               startTime: _minsToTimeStr(startMins), endTime: _minsToTimeStr(endM),
+               allDay: false, _scheduled: true };
+  events.push(ev);
+  pendingSaves.push(dbSaveEvent(ev));
+  _cascadeScheduled(ds, endM, pendingSaves);       // shove anything it now overlaps
+
+  // Auto-resume at that wall-clock moment. Compare full dates, not time-of-day.
+  const at = new Date(ds + 'T00:00:00');
+  at.setMinutes(at.getMinutes() + startMins);
+  const ms = at.getTime() - Date.now();
+  if (timerScheduledTimeout) { clearTimeout(timerScheduledTimeout); timerScheduledTimeout = null; }
+  if (ms > 0) {
+    timerScheduledTimeout = setTimeout(() => {
+      timerScheduledTimeout = null;
+      if (timerRunning) return;                 // already working on something
+      if (timerTaskId != task.id) {             // re-select it if the user switched away
+        const sel = document.getElementById('timer-task-select');
+        if (sel) { sel.value = task.id; onTimerTaskChange(); }
+      }
+      if (timerTaskId == task.id) {
+        startTimer();
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try { new Notification('Back to ' + task.title); } catch (e) {}
+        }
+      }
+    }, ms);
+  } else {
+    startTimer();
+  }
+}
+
 // Resume: place the remaining time starting now, and push later blocks out of the way.
 async function _resumePausedBlock() {
   const info = _pausedResume;
@@ -3247,14 +3288,24 @@ async function _quickAddNowApply(ctx, choice) {
 
   // The modal can fire for a running timer whose block doesn't span this exact
   // minute, in which case `current` above is null and nothing stopped the clock.
-  if (choice === 'pause' && timerRunning) {
-    stopTimer();
-    saveTimerProgress();
-    if (!_pausedResume && timerTaskId) {
-      const t2 = tasks.find(x => x.id == timerTaskId);
-      if (t2) _pausedResume = { taskId: t2.id, title: t2.title, calId,
-                                remainingMins: Math.max(0, Math.ceil(timerSecondsLeft / 60)) };
-    }
+  if (choice === 'pause') {
+    if (timerRunning) { stopTimer(); saveTimerProgress(); }
+    // Who are we resuming? The timer's task if there is one, otherwise the task
+    // behind the block that was in progress.
+    let t2 = timerTaskId ? tasks.find(x => x.id == timerTaskId) : null;
+    if (!t2 && current) t2 = tasks.find(x => x.title === current.e.title);
+
+    // How much is left? The timer knows if it was running, but if it never started
+    // (task scheduled but not begun) timerSecondsLeft is 0 — in which case the block
+    // itself is the source of truth. Taking the larger of the two means the block is
+    // never silently dropped for want of a duration.
+    const fromTimer = Math.max(0, Math.ceil(timerSecondsLeft / 60));
+    const fromBlock = current ? Math.max(0, current.en - startMins) : 0;
+    const remainingMins = Math.max(fromTimer, fromBlock);
+
+    // Handled automatically below, so there's nothing for a manual resume to pick up.
+    _pausedResume = null;
+    await _placeResumeAfterBlock(ctx, remainingMins, t2, pendingSaves);
   }
 
   // On "pause" the later blocks are still going to happen — leave them be.
@@ -3286,7 +3337,7 @@ async function _quickAddNowApply(ctx, choice) {
   });
 
   if (choice === 'pause') {
-    showToast(`Block added — resume when ready and the rest will move to that time`);
+    showToast(`Block added — the rest resumes at ${fmtTime12(endMins)}`);
   } else {
     const freed = (current ? 1 : 0) + later.length;
     if (freed) showToast(`Block added — ${freed} scheduled task${freed === 1 ? '' : 's'} released`);
