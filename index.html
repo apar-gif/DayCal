@@ -1257,6 +1257,7 @@ function renderSidebar(){saveToStorage();
   });
 
   function renderCalItem(c) {
+    const blocks = calBlocksTime(c.id);
     return `<div class="cal-item${c.visible?' visible':''}" id="item-${c.id}">
       <div class="cal-item-row" onclick="toggleVis('${c.id}')">
         <div class="cal-dot" style="background:${c.color}"></div>
@@ -1269,6 +1270,9 @@ function renderSidebar(){saveToStorage();
         <div class="edit-menu-item" style="flex-direction:column;align-items:flex-start;gap:6px;">
           <div style="display:flex;align-items:center;gap:9px;"><i class="ti ti-palette"></i>Change color</div>
           <div class="color-picker-row" id="cp-${c.id}"></div>
+        </div>
+        <div class="edit-menu-item" onclick="event.stopPropagation();toggleCalBlocking('${c.id}')" title="When off, events on this calendar stay visible but the scheduler treats that time as free">
+          <i class="ti ti-${blocks?'square-check':'square'}"></i>Blocks free time
         </div>
         <div class="edit-menu-item danger" onclick="askDelete('${c.id}')"><i class="ti ti-trash"></i>Delete</div>
       </div>
@@ -1837,6 +1841,21 @@ async function confirmImport(){
 function eventsForDate(ds){return events.filter(e=>{if(e._pendingNew)return e.date===ds;const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));}
 function dateStr(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
 function calColor(calId){const c=calendars.find(x=>x.id==calId);return c?c.color:'#888';}
+
+// ── Calendars that stay visible but don't count as busy ──
+// Sleep, holidays, all-day "commitments" you'd still work through. Kept in
+// localStorage per-device rather than in Supabase, so no schema change.
+let nonBlockingCals = new Set();
+try { nonBlockingCals = new Set((JSON.parse(localStorage.getItem('daycal_nonblocking') || '[]') || []).map(String)); } catch(e) {}
+function calBlocksTime(calId){ return !nonBlockingCals.has(String(calId)); }
+function toggleCalBlocking(id){
+  const k = String(id);
+  if (nonBlockingCals.has(k)) nonBlockingCals.delete(k); else nonBlockingCals.add(k);
+  try { localStorage.setItem('daycal_nonblocking', JSON.stringify([...nonBlockingCals])); } catch(e) {}
+  openMenu = null;
+  renderSidebar();
+  render(); // render() refreshes the free-slot panel
+}
 
 // ── View ──
 const viewMeta={year:{label:'Year',icon:'ti-calendar'},month:{label:'Month',icon:'ti-layout-grid'},week:{label:'Week',icon:'ti-columns'},day:{label:'Day',icon:'ti-square'}};
@@ -2469,7 +2488,7 @@ function computeWeekSlots() {
 
     const visible = e => {
       const cal = calendars.find(c => c.id == e.calId);
-      return cal && cal.visible && !e.allDay && e.startTime && e.endTime;
+      return cal && cal.visible && calBlocksTime(e.calId) && !e.allDay && e.startTime && e.endTime;
     };
 
     // Get visible events for this day
@@ -6053,22 +6072,35 @@ async function _resyncExistingGcals(prevSynced) {
           _gcalUserEmail = email;
 
           const now = new Date();
-          const timeMin = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate()).toISOString();
-          const timeMax = new Date(now.getFullYear() + 2, now.getMonth(), now.getDate()).toISOString();
-          let newCount = 0;
+          const _winStart = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
+          const _winEnd = new Date(now.getFullYear() + 2, now.getMonth(), now.getDate());
+          const timeMin = _winStart.toISOString();
+          const timeMax = _winEnd.toISOString();
+          const winStartDs = dateStr(_winStart.getFullYear(), _winStart.getMonth(), _winStart.getDate());
+          const winEndDs = dateStr(_winEnd.getFullYear(), _winEnd.getMonth(), _winEnd.getDate());
+          let newCount = 0, goneCount = 0;
 
           for (const appCal of cals) {
             setText(`Checking ${appCal.name}…`);
             try {
+              // An event deleted in Google is NOT returned as status:'cancelled' here —
+              // with singleEvents=true and no syncToken it just stops appearing. The
+              // cancelled branch below therefore almost never fires, and deleted events
+              // lived on in Supabase forever. Track what Google actually returned and
+              // prune the rest, but only if every page came back clean (see pagesOk).
+              const seen = new Set();
+              let pagesOk = true, sawAnyPage = false;
               let pageToken = null;
               do {
                 let url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(appCal._gcalId)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=2500`;
                 if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
                 const res = await fetch(url, { headers: { Authorization: 'Bearer ' + _gcalToken } });
                 const data = await res.json();
-                if (data.error || !data.items) break;
+                if (data.error || !data.items) { pagesOk = false; break; }
+                sawAnyPage = true;
 
                 for (const item of data.items) {
+                  if (item.id) seen.add(item.id);
                   if (item.status === 'cancelled') {
                     // Remove cancelled events
                     const idx = events.findIndex(e => e._gcalEventId === item.id);
@@ -6104,9 +6136,26 @@ async function _resyncExistingGcals(prevSynced) {
                 }
                 pageToken = data.nextPageToken || null;
               } while (pageToken);
+
+              // Prune events Google no longer has. Skipped entirely if any page failed,
+              // so a dropped request can never wipe a calendar.
+              if (pagesOk && sawAnyPage) {
+                const stale = events.filter(e => e._gcalEventId && e.calId == appCal.id
+                  && !seen.has(e._gcalEventId)
+                  && e.date >= winStartDs && e.date <= winEndDs);
+                for (const ev of stale) {
+                  await dbDeleteEvent(ev);
+                  const i = events.indexOf(ev);
+                  if (i >= 0) events.splice(i, 1);
+                  goneCount++;
+                }
+              }
             } catch(e) { console.warn('Re-sync error', appCal.name, e); }
           }
-          setText(newCount > 0 ? `Done — ${newCount} new event${newCount>1?'s':''} added` : 'Up to date — no new events');
+          const _parts = [];
+          if (newCount) _parts.push(`${newCount} new`);
+          if (goneCount) _parts.push(`${goneCount} removed`);
+          setText(_parts.length ? `Done — ${_parts.join(', ')}` : 'Up to date — no changes');
           setTimeout(() => { progress.remove(); render(); renderSidebar(); scheduleEventNotifications(); }, 2000);
           resolve();
         }
