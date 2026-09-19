@@ -1350,7 +1350,24 @@ function toggleGcalGroup(email) {
   render();
 }
 function toggleVis(id){if(openMenu===id||renamingId===id)return;const c=calendars.find(x=>x.id==id);if(c){c.visible=!c.visible;dbSaveCalendar(c);}renderSidebar();render();}
-function toggleMenu(e,id){e.stopPropagation();openMenu=openMenu===id?null:id;renamingId=null;renderSidebar();}
+function toggleMenu(e,id){e.stopPropagation();openMenu=openMenu===id?null:id;renamingId=null;renderSidebar();_positionEditMenu(openMenu);}
+// The menu is absolutely positioned at left:100% — i.e. outside the sidebar, which is
+// overflow:hidden, so it was clipped away and the pencil looked dead. Re-anchor it as
+// position:fixed against the pencil's screen rect so it escapes the clip. Stays inside
+// .cal-item in the DOM, so the outside-click handler still recognises it.
+function _positionEditMenu(id){
+  if(!id) return;
+  const menu=document.getElementById('menu-'+id);
+  const item=document.getElementById('item-'+id);
+  const anchor=item?item.querySelector('.cal-edit-btn'):null;
+  if(!menu||!anchor) return;
+  const r=anchor.getBoundingClientRect();
+  const w=175,h=menu.offsetHeight||240;
+  menu.style.position='fixed';
+  menu.style.margin='0';
+  menu.style.left=Math.max(8,Math.min(r.right+6,window.innerWidth-w-8))+'px';
+  menu.style.top=Math.max(8,Math.min(r.top,window.innerHeight-h-8))+'px';
+}
 function changeColor(e,id,col){e.stopPropagation();const c=calendars.find(x=>x.id==id);if(c){c.color=col;dbSaveCalendar(c);}openMenu=null;renderSidebar();render();}
 function startRename(id){openMenu=null;renamingId=id;renderSidebar();}
 function cancelRename(){renamingId=null;renderSidebar();}
@@ -2493,7 +2510,12 @@ function computeWeekSlots() {
 
     const visible = e => {
       const cal = calendars.find(c => c.id == e.calId);
-      return cal && cal.visible && calBlocksTime(e.calId) && !e.allDay && e.startTime && e.endTime;
+      // Blocks the app itself placed — scheduled task blocks and Now blocks — always
+      // count as busy, whatever calendar they landed on. Otherwise marking that
+      // calendar non-blocking would let the scheduler book straight over your own
+      // work blocks (they default to the same calendar as everything else).
+      const ownBlock = e._scheduled || e.title === 'Block';
+      return cal && cal.visible && (ownBlock || calBlocksTime(e.calId)) && !e.allDay && e.startTime && e.endTime;
     };
 
     // Get visible events for this day
