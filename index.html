@@ -1772,16 +1772,24 @@ function parseIcs(text){
   const evts=[];const lines=text.replace(/\r\n /g,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');let cur=null;
   for(const raw of lines){const line=raw.trim();
     if(line==='BEGIN:VEVENT'){cur={};}
-    else if(line==='END:VEVENT'&&cur){if(cur.date)evts.push(cur);cur=null;}
+    else if(line==='END:VEVENT'&&cur){
+      // The app has no multi-day timed events: an end that lands on a later date (a
+      // 23:00→01:00 event, or one that crosses midnight after timezone conversion)
+      // would store endTime < startTime. Clamp it to the end of the start day.
+      if(cur.date&&cur.startTime&&cur.endDate&&cur.endDate>cur.date)cur.endTime='23:59';
+      delete cur.endDate;
+      if(cur.date)evts.push(cur);cur=null;}
     else if(cur){
       if(line.startsWith('SUMMARY:'))cur.title=line.slice(8).replace(/\\n/g,' ').replace(/\\,/g,',');
       else if(line.startsWith('DTSTART;VALUE=DATE:')){cur.date=icsD(line.slice(19));cur.allDay=true;}
-      else if(line.startsWith('DTSTART:')||line.startsWith('DTSTART;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v);if(p){cur.date=p.date;cur.startTime=p.time;cur.allDay=false;}}
-      else if(line.startsWith('DTEND:')||line.startsWith('DTEND;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v);if(p)cur.endTime=p.time;}
+      else if(line.startsWith('DTSTART:')||line.startsWith('DTSTART;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v,_icsTzid(line));if(p){cur.date=p.date;cur.startTime=p.time;cur.allDay=false;}}
+      else if(line.startsWith('DTEND:')||line.startsWith('DTEND;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v,_icsTzid(line));if(p){cur.endTime=p.time;cur.endDate=p.date;}}
     }
   }
   return evts;
 }
+// TZID parameter from a property line, e.g. DTSTART;TZID=America/New_York:20260916T090000
+function _icsTzid(line){const head=line.split(':')[0];const m=head.match(/;TZID=("[^"]*"|[^;]*)/i);return m?m[1].replace(/^"|"$/g,'').trim():null;}
 function icsD(s){if(!s||s.length<8)return null;return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);}
 function icsParseDateTime(v){
   // v is the part after DTSTART: or DTSTART;TZID=...:
@@ -1819,8 +1827,9 @@ async function confirmImport(){
   });
   closeImport();render();parsedIcsEvents=[];
   if(toSave.length){
-    await Promise.all(toSave.map(e=>dbSaveEvent(e)));
-    showToast(`Imported ${toSave.length} event${toSave.length===1?'':'s'}`);
+    const failed=await dbSaveEventsBatched(toSave);
+    if(failed.length)await _reportFailedSaves(failed);
+    else showToast(`Imported ${toSave.length} event${toSave.length===1?'':'s'}`);
   }
 }
 
@@ -2456,12 +2465,18 @@ function computeWeekSlots() {
 
     // Get visible events for this day
     const dayEvs = events.filter(e => {
-      const cal = calendars.find(c => c.id === e.calId);
+      const cal = calendars.find(c => c.id == e.calId);
       return e.date === ds && cal && cal.visible && !e.allDay && e.startTime && e.endTime;
-    }).map(e => ({
-      start: timeToMins(e.startTime),
-      end: timeToMins(e.endTime)
-    })).sort((a, b) => a.start - b.start);
+    }).map(e => {
+      const start = timeToMins(e.startTime);
+      let end = timeToMins(e.endTime);
+      // An event that crosses midnight is stored with end < start (e.g. 21:00→06:00).
+      // Left as-is, `if (ev.end > cursor)` is false, the cursor never advances past
+      // the event, and the end-of-day push emits a slot OVERLAPPING the one just
+      // created. Treat such events as running to the end of the day.
+      if (end <= start) end = 24 * 60;
+      return { start, end };
+    }).sort((a, b) => a.start - b.start);
 
     // Skip days entirely in the past
     const isToday = ds === todayStr();
@@ -4086,10 +4101,61 @@ function utcToTzDate(utcDate) {
 
 // Override icsParseDateTime to use appTimezone instead of local
 const _origIcsParseDateTime = icsParseDateTime;
-icsParseDateTime = function(v) {
+// Outlook/Exchange export Windows zone names instead of IANA ones.
+const _WIN_TZ = {
+  'Eastern Standard Time':'America/New_York', 'Central Standard Time':'America/Chicago',
+  'Mountain Standard Time':'America/Denver', 'US Mountain Standard Time':'America/Phoenix',
+  'Pacific Standard Time':'America/Los_Angeles', 'Alaskan Standard Time':'America/Anchorage',
+  'Hawaiian Standard Time':'Pacific/Honolulu', 'Atlantic Standard Time':'America/Halifax',
+  'GMT Standard Time':'Europe/London', 'Greenwich Standard Time':'Atlantic/Reykjavik',
+  'W. Europe Standard Time':'Europe/Berlin', 'Romance Standard Time':'Europe/Paris',
+  'Central Europe Standard Time':'Europe/Budapest', 'Central European Standard Time':'Europe/Warsaw',
+  'E. Europe Standard Time':'Europe/Chisinau', 'FLE Standard Time':'Europe/Kiev',
+  'Russian Standard Time':'Europe/Moscow', 'India Standard Time':'Asia/Kolkata',
+  'China Standard Time':'Asia/Shanghai', 'Taipei Standard Time':'Asia/Taipei',
+  'Singapore Standard Time':'Asia/Singapore', 'Tokyo Standard Time':'Asia/Tokyo',
+  'Korea Standard Time':'Asia/Seoul', 'AUS Eastern Standard Time':'Australia/Sydney',
+  'New Zealand Standard Time':'Pacific/Auckland', 'UTC':'UTC', 'Coordinated Universal Time':'UTC'
+};
+// Returns a valid IANA zone for an ICS TZID, or null if it can't be resolved.
+function _icsResolveTz(tzid) {
+  if (!tzid) return null;
+  const cands = [_WIN_TZ[tzid] || tzid];
+  // Some exporters prefix the zone with a path: /mozilla.org/20050126_1/America/New_York
+  const m = tzid.match(/([A-Za-z_]+\/[A-Za-z_\-]+(?:\/[A-Za-z_\-]+)?)$/);
+  if (m) cands.push(m[1]);
+  for (const c of cands) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: c }); return c; } catch (e) {}
+  }
+  return null;
+}
+// Wall-clock time in zone `tz` → the real instant (Date).
+function _tzWallToUtc(y, mo, d, h, mi, tz) {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23',
+    year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const offset = t => {
+    const p = {}; fmt.formatToParts(new Date(t)).forEach(x => { p[x.type] = x.value; });
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - t;
+  };
+  const guess = Date.UTC(y, mo, d, h, mi);
+  let t = guess - offset(guess);
+  t = guess - offset(t); // second pass corrects the offset near DST transitions
+  return new Date(t);
+}
+icsParseDateTime = function(v, tzid) {
   const raw = v.trim();
   if (raw.length < 8) return null;
   const isUTC = raw.endsWith('Z');
+  // TZID-qualified time (Outlook, Apple Calendar): convert from that zone to appTimezone.
+  // Unresolvable TZIDs fall through to floating, as before.
+  const tz = !isUTC && raw.length > 8 ? _icsResolveTz(tzid) : null;
+  if (tz) {
+    const inst = _tzWallToUtc(
+      parseInt(raw.slice(0,4)), parseInt(raw.slice(4,6))-1, parseInt(raw.slice(6,8)),
+      parseInt(raw.slice(9,11)), parseInt(raw.slice(11,13)), tz
+    );
+    return { date: utcToTzDate(inst), time: utcToTzTime(inst) };
+  }
   if (isUTC) {
     const utc = new Date(Date.UTC(
       parseInt(raw.slice(0,4)), parseInt(raw.slice(4,6))-1, parseInt(raw.slice(6,8)),
@@ -5600,19 +5666,20 @@ async function dbDeleteGroup(group) {
       ];
       const today = new Date();
       const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
+      const _pd = n => { const x = new Date(y, m, d + n); return dateStr(x.getFullYear(), x.getMonth(), x.getDate()); };
       events = [
-        { id: 'ev-1', title: 'Team standup',  calendar_id: 'cal-2', start: new Date(y,m,d,9,0).toISOString(),    end: new Date(y,m,d,9,30).toISOString(),  allDay: false, user_id: 'preview-user' },
-        { id: 'ev-2', title: 'Gym',           calendar_id: 'cal-3', start: new Date(y,m,d,7,0).toISOString(),    end: new Date(y,m,d,8,0).toISOString(),   allDay: false, user_id: 'preview-user' },
-        { id: 'ev-3', title: 'Lunch',         calendar_id: 'cal-1', start: new Date(y,m,d,12,30).toISOString(),  end: new Date(y,m,d,13,30).toISOString(), allDay: false, user_id: 'preview-user' },
-        { id: 'ev-4', title: 'Deep work',     calendar_id: 'cal-2', start: new Date(y,m,d+1,10,0).toISOString(), end: new Date(y,m,d+1,12,0).toISOString(),allDay: false, user_id: 'preview-user' },
-        { id: 'ev-5', title: 'Review sprint', calendar_id: 'cal-2', start: new Date(y,m,d+2,15,0).toISOString(), end: new Date(y,m,d+2,16,0).toISOString(),allDay: false, user_id: 'preview-user' },
+        { id: 'ev-1', title: 'Team standup',  calId: 'cal-2', date: _pd(0), startTime: '09:00', endTime: '09:30', allDay: false },
+        { id: 'ev-2', title: 'Gym',           calId: 'cal-3', date: _pd(0), startTime: '07:00', endTime: '08:00', allDay: false },
+        { id: 'ev-3', title: 'Lunch',         calId: 'cal-1', date: _pd(0), startTime: '12:30', endTime: '13:30', allDay: false },
+        { id: 'ev-4', title: 'Deep work',     calId: 'cal-2', date: _pd(1), startTime: '10:00', endTime: '12:00', allDay: false },
+        { id: 'ev-5', title: 'Review sprint', calId: 'cal-2', date: _pd(2), startTime: '15:00', endTime: '16:00', allDay: false },
       ];
       groups = [{ id: 'grp-1', name: 'College Admissions', user_id: 'preview-user' }];
       tasks = [
-        { id: 'tsk-1', title: 'Finish personal statement', group_id: 'grp-1', priority: 'high',   estMins: 90, done: false, user_id: 'preview-user' },
-        { id: 'tsk-2', title: 'PIQ Questions',             group_id: 'grp-1', priority: 'medium', estMins: 50, done: false, user_id: 'preview-user' },
-        { id: 'tsk-3', title: 'Match prep notes',          group_id: null,    priority: 'low',    estMins: 30, done: false, user_id: 'preview-user' },
-        { id: 'tsk-4', title: 'Read chapter 5',            group_id: null,    priority: 'medium', estMins: 45, done: false, user_id: 'preview-user' },
+        { id: 'tsk-1', title: 'Finish personal statement', notes: '', due: '', dueTime: '', groupId: 'grp-1', priority: 'high',   estMins: 90, timeLeftMins: 90, done: false, scheduled: false },
+        { id: 'tsk-2', title: 'PIQ Questions',             notes: '', due: '', dueTime: '', groupId: 'grp-1', priority: 'medium', estMins: 50, timeLeftMins: 50, done: false, scheduled: false },
+        { id: 'tsk-3', title: 'Match prep notes',          notes: '', due: '', dueTime: '', groupId: null,    priority: 'low',    estMins: 30, timeLeftMins: 30, done: false, scheduled: false },
+        { id: 'tsk-4', title: 'Read chapter 5',            notes: '', due: '', dueTime: '', groupId: null,    priority: 'medium', estMins: 45, timeLeftMins: 45, done: false, scheduled: false },
       ];
     } catch(e) { console.error('preview seed error', e); }
 
