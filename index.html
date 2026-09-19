@@ -2535,6 +2535,42 @@ function renderSchedPanel() {
   renderSchedBody();
 }
 
+// ── Keep free slots in sync with the calendar ──
+// Slot recomputes used to be sprinkled through individual handlers, so any path
+// that forgot the `schedSlots = computeWeekSlots()` line left stale free periods
+// on screen: deleting a calendar (and all its events), a Google re-sync removing
+// cancelled events, an event edited or dragged from the popover. render() runs on
+// every mutation, so refresh from there instead. The per-handler calls still work
+// and are now just redundant.
+let _inSchedSync = false;
+function refreshSchedSlots() {
+  if (!schedPanelOpen || _inSchedSync) return;
+  _inSchedSync = true;
+  try {
+    // Remember where the user was pointing so the view doesn't jump. After a
+    // delete the surrounding gaps merge into one bigger slot, so match on the
+    // first slot that still covers the old start rather than on the index.
+    const prev = schedSlots[schedSlotIndex];
+    schedSlots = computeWeekSlots();
+    if (prev) {
+      const i = schedSlots.findIndex(s => s.date > prev.date || (s.date === prev.date && s.endMins > prev.startMins));
+      schedSlotIndex = i >= 0 ? i : Math.max(0, schedSlots.length - 1);
+    }
+    if (schedSlotIndex >= schedSlots.length) schedSlotIndex = Math.max(0, schedSlots.length - 1);
+    renderSchedPanel();
+  } catch (e) {
+    console.error('refreshSchedSlots', e);
+  } finally {
+    _inSchedSync = false;
+  }
+}
+const _renderBeforeSchedSync = render;
+render = function() {
+  const r = _renderBeforeSchedSync.apply(this, arguments);
+  refreshSchedSlots();
+  return r;
+};
+
 function renderSchedSlotBox() {
   const box = document.getElementById('sched-slot-box');
   if (!box) return;
