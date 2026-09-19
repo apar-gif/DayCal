@@ -356,6 +356,11 @@
   .sched-slot-label{font-size:10px;font-weight:600;color:var(--accent-text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;}
   .sched-slot-time{font-size:13px;font-weight:500;color:var(--accent-text);}
   .sched-slot-dur{font-size:12px;color:var(--accent-text);opacity:.8;margin-top:2px;}
+  .sched-refresh-btn{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;letter-spacing:.04em;padding:2px 8px;border-radius:6px;background:var(--bg);border:.5px solid var(--accent);color:var(--accent-text);cursor:pointer;text-transform:uppercase;}
+  .sched-refresh-btn:hover{background:var(--accent)22;}
+  .sched-refresh-btn i{font-size:12px;}
+  .sched-refresh-btn.spinning i{animation:schedSpin .6s linear;}
+  @keyframes schedSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
   .sched-slot-nav{display:flex;gap:5px;margin-top:8px;}
   .sched-slot-nav button{font-size:11px;padding:3px 10px;border-radius:6px;background:var(--bg);border:.5px solid var(--accent);color:var(--accent-text);cursor:pointer;transition:background .15s;}
   .sched-slot-nav button:hover{background:var(--accent)22;}
@@ -2612,17 +2617,22 @@ render = function() {
   return r;
 };
 
+function _schedRefreshBtn() {
+  return `<button class="sched-refresh-btn" id="sched-refresh-btn" onclick="rescanSchedSlots()" title="Re-scan free time from now through the next 7 days"><i class="ti ti-refresh"></i>Rescan</button>`;
+}
+
 function renderSchedSlotBox() {
   const box = document.getElementById('sched-slot-box');
   if (!box) return;
   if (schedSlots.length === 0 || schedSlotIndex >= schedSlots.length) {
-    box.innerHTML = `<div class="sched-slot-label">Current slot</div><div class="sched-slot-time" style="color:var(--text2);">No free slots this week</div>`;
+    box.innerHTML = `<div class="sched-slot-label"><span>Current slot</span>${_schedRefreshBtn()}</div><div class="sched-slot-time" style="color:var(--text2);">No free slots this week</div>`;
     return;
   }
   const s = schedSlots[schedSlotIndex];
   box.innerHTML = `
     <div class="sched-slot-label">
       <span>Free slot ${schedSlotIndex + 1} of ${schedSlots.length}</span>
+      ${_schedRefreshBtn()}
     </div>
     <div class="sched-slot-time">${s.dayFull} · ${fmtTime12(s.startMins)} – ${fmtTime12(s.endMins)}</div>
     <div class="sched-slot-dur">${fmtDur(s.durMins)} available</div>
@@ -2630,6 +2640,22 @@ function renderSchedSlotBox() {
       <button onclick="schedSkipSlot(-1)" ${schedSlotIndex === 0 ? 'disabled style="opacity:.4;"' : ''}>‹ Prev</button>
       <button onclick="schedSkipSlot(1)" ${schedSlotIndex >= schedSlots.length - 1 ? 'disabled style="opacity:.4;"' : ''}>Skip ›</button>
     </div>`;
+}
+
+// Re-scan free slots from right now to the end of the normal 7-day window.
+// Unlike refreshSchedSlots() (which follows render() and keeps your place), this
+// resets to the first slot, so the one starting now is what you land on.
+function rescanSchedSlots() {
+  ensureTaskFields();
+  schedSlots = computeWeekSlots();
+  schedSlotIndex = 0;
+  schedSelectedTaskId = null;
+  renderSchedPanel();
+  const btn = document.getElementById('sched-refresh-btn');
+  if (btn) { btn.classList.add('spinning'); setTimeout(() => btn.classList.remove('spinning'), 600); }
+  showToast(schedSlots.length
+    ? `${schedSlots.length} free slot${schedSlots.length === 1 ? '' : 's'} found`
+    : 'No free slots in the next 7 days');
 }
 
 function schedSkipSlot(dir) {
