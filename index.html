@@ -6092,6 +6092,19 @@ function _showSyncOptions(prevSynced) {
   };
 }
 
+// Re-running from a button click gives Google a fresh user gesture, which is the
+// only reliable way past a popup blocker.
+function _showResyncRetry(prevSynced) {
+  const box = document.getElementById('gcal-resync-progress');
+  if (!box || document.getElementById('gcal-resync-retry')) return;
+  const btn = document.createElement('button');
+  btn.id = 'gcal-resync-retry';
+  btn.textContent = 'Retry';
+  btn.style.cssText = 'margin-left:10px;padding:3px 10px;border-radius:6px;border:.5px solid var(--accent);background:var(--bg);color:var(--accent-text);font-size:12px;cursor:pointer;';
+  btn.onclick = () => { box.remove(); _resyncExistingGcals(prevSynced); };
+  box.appendChild(btn);
+}
+
 async function _resyncExistingGcals(prevSynced) {
   // Group by email so we only need one OAuth token per account
   const byEmail = {};
@@ -6101,7 +6114,8 @@ async function _resyncExistingGcals(prevSynced) {
   });
 
   const progress = document.createElement('div');
-  progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);';
+  progress.id = 'gcal-resync-progress';
+  progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);display:flex;align-items:center;';
   progress.innerHTML = '<span id="gcal-resync-text">Connecting to Google…</span>';
   document.body.appendChild(progress);
 
@@ -6114,6 +6128,18 @@ async function _resyncExistingGcals(prevSynced) {
         client_id: GCAL_CLIENT_ID,
         scope: GCAL_SCOPES,
         hint: email,
+        // Without this the loop just hangs when the popup never opens: the re-sync
+        // reports nothing, changes nothing, and looks like sync is broken. Google
+        // only opens a popup when the silent grant fails, and browsers block it
+        // because we're several awaits past the original click.
+        error_callback: (err) => {
+          const blocked = err && (err.type === 'popup_failed_to_open' || err.type === 'popup_closed');
+          setText(blocked
+            ? `Popup blocked for ${email} — allow popups, then press Retry`
+            : `Couldn't connect to ${email}`);
+          _showResyncRetry(prevSynced);
+          setTimeout(resolve, 100);
+        },
         callback: async (tokenResponse) => {
           if (tokenResponse.error) { setText('Auth failed — ' + tokenResponse.error); setTimeout(resolve, 1500); return; }
           _gcalToken = tokenResponse.access_token;
@@ -6204,7 +6230,10 @@ async function _resyncExistingGcals(prevSynced) {
           if (newCount) _parts.push(`${newCount} new`);
           if (goneCount) _parts.push(`${goneCount} removed`);
           setText(_parts.length ? `Done — ${_parts.join(', ')}` : 'Up to date — no changes');
-          setTimeout(() => { progress.remove(); render(); renderSidebar(); scheduleEventNotifications(); }, 2000);
+          setTimeout(() => {
+            if (!document.getElementById('gcal-resync-retry')) progress.remove();
+            render(); renderSidebar(); scheduleEventNotifications();
+          }, 2000);
           resolve();
         }
       });
@@ -6218,6 +6247,12 @@ function _startFullGcalSync() {
   const tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GCAL_CLIENT_ID,
     scope: GCAL_SCOPES,
+    error_callback: (err) => {
+      const blocked = err && (err.type === 'popup_failed_to_open' || err.type === 'popup_closed');
+      showToast(blocked
+        ? 'Google popup was blocked — allow popups for this site and try again'
+        : 'Google sign-in was cancelled');
+    },
     callback: async (tokenResponse) => {
       if (tokenResponse.error) {
         alert('Google sign-in failed: ' + tokenResponse.error);
