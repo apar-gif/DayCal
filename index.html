@@ -2463,24 +2463,46 @@ function computeWeekSlots() {
     const ds = dateStr(d.getFullYear(), d.getMonth(), d.getDate());
     const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
 
-    // Get visible events for this day
-    const dayEvs = events.filter(e => {
+    // Previous day, so events that run past midnight can spill their tail onto this one
+    const prev = new Date(d); prev.setDate(d.getDate() - 1);
+    const prevDs = dateStr(prev.getFullYear(), prev.getMonth(), prev.getDate());
+
+    const visible = e => {
       const cal = calendars.find(c => c.id == e.calId);
-      return e.date === ds && cal && cal.visible && !e.allDay && e.startTime && e.endTime;
-    }).map(e => {
+      return cal && cal.visible && !e.allDay && e.startTime && e.endTime;
+    };
+
+    // Get visible events for this day
+    const dayEvs = events.filter(e => e.date === ds && visible(e)).map(e => {
       const start = timeToMins(e.startTime);
       let end = timeToMins(e.endTime);
+      // A zero-length event (end === start) blocks nothing. It used to hit the
+      // midnight clamp below and swallow the whole rest of the day — a single
+      // 00:00→00:00 event (common from imports) left today with no free slots at
+      // all, so the panel skipped straight to tomorrow.
+      if (end === start) return null;
       // An event that crosses midnight is stored with end < start (e.g. 21:00→06:00).
       // Left as-is, `if (ev.end > cursor)` is false, the cursor never advances past
       // the event, and the end-of-day push emits a slot OVERLAPPING the one just
-      // created. Treat such events as running to the end of the day.
-      if (end <= start) end = 24 * 60;
+      // created. It is busy until midnight here; the tail lands on the next day below.
+      if (end < start) end = 24 * 60;
       return { start, end };
-    }).sort((a, b) => a.start - b.start);
+    }).filter(Boolean);
 
-    // Skip days entirely in the past
-    const isToday = ds === todayStr();
-    const isPast = ds < todayStr();
+    // Tails of yesterday's midnight-crossing events (22:00→06:00 ⇒ busy 00:00–06:00 today).
+    // Without this the early hours looked free while the event was still running.
+    events.filter(e => e.date === prevDs && visible(e)).forEach(e => {
+      const start = timeToMins(e.startTime), end = timeToMins(e.endTime);
+      if (end < start && end > 0) dayEvs.push({ start: 0, end });
+    });
+
+    dayEvs.sort((a, b) => a.start - b.start);
+
+    // Skip days entirely in the past. Derive today from the same fresh clock the
+    // loop uses — todayStr() reads the module-level `now`.
+    const _todayStr = dateStr(_now.getFullYear(), _now.getMonth(), _now.getDate());
+    const isToday = ds === _todayStr;
+    const isPast = ds < _todayStr;
     if (isPast) continue;
 
     // For today, clamp effective start to current time (rounded up to next 5 min)
