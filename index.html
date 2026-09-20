@@ -6092,6 +6092,72 @@ function _showSyncOptions(prevSynced) {
   };
 }
 
+// ── Google access-token cache ──
+// GIS implicit-flow tokens last ~1h. Without caching, every re-sync asked for a new
+// one, which is what made syncing so fragile: the request happens several awaits
+// after the click, so the browser blocks the popup and the whole sync dies silently.
+// Cached in sessionStorage, so it's gone when the tab closes — sign-in is still
+// required on every page load.
+let _gcalTokenCache = {};
+try { _gcalTokenCache = JSON.parse(sessionStorage.getItem('daycal_gcal_tokens') || '{}') || {}; } catch(e) {}
+function _saveGcalTokenCache(){ try { sessionStorage.setItem('daycal_gcal_tokens', JSON.stringify(_gcalTokenCache)); } catch(e) {} }
+function cacheGcalToken(email, tokenResponse){
+  if (!email || !tokenResponse || !tokenResponse.access_token) return;
+  _gcalTokenCache[email] = { token: tokenResponse.access_token, exp: Date.now() + ((+tokenResponse.expires_in || 3600) * 1000) };
+  _saveGcalTokenCache();
+}
+function getCachedGcalToken(email){
+  const t = _gcalTokenCache[email];
+  return (t && t.token && t.exp - Date.now() > 120000) ? t.token : null; // 2 min of headroom
+}
+function clearCachedGcalToken(email){ delete _gcalTokenCache[email]; _saveGcalTokenCache(); }
+
+// Returns an access token for `email`, or null. Uses the cache first, so a re-sync
+// within the hour needs no popup at all. Never hangs: COOP can stop GIS noticing a
+// popup the user closed, so popup_closed may never fire — hence the timeout.
+function acquireGcalToken(email, setText, onNeedsRetry){
+  const cached = getCachedGcalToken(email);
+  if (cached) return Promise.resolve(cached);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = v => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
+    const timer = setTimeout(() => {
+      setText(`${email} didn't respond — press Retry`);
+      if (onNeedsRetry) onNeedsRetry();
+      finish(null);
+    }, 90000);
+    try {
+      const tc = google.accounts.oauth2.initTokenClient({
+        client_id: GCAL_CLIENT_ID,
+        scope: GCAL_SCOPES,
+        hint: email,
+        error_callback: (err) => {
+          const blocked = err && (err.type === 'popup_failed_to_open' || err.type === 'popup_closed');
+          setText(blocked ? `Popup blocked for ${email} — allow popups, then press Retry`
+                          : `Couldn't connect to ${email}`);
+          if (onNeedsRetry) onNeedsRetry();
+          finish(null);
+        },
+        callback: (tokenResponse) => {
+          if (!tokenResponse || tokenResponse.error) {
+            setText('Auth failed — ' + ((tokenResponse && tokenResponse.error) || 'unknown'));
+            if (onNeedsRetry) onNeedsRetry();
+            return finish(null);
+          }
+          cacheGcalToken(email, tokenResponse);
+          finish(tokenResponse.access_token);
+        }
+      });
+      tc.requestAccessToken({ prompt: '' }); // silent when the grant is still valid
+    } catch(e) {
+      console.warn('Token request failed', email, e);
+      setText(`Couldn't connect to ${email}`);
+      if (onNeedsRetry) onNeedsRetry();
+      finish(null);
+    }
+  });
+}
+
 // Re-running from a button click gives Google a fresh user gesture, which is the
 // only reliable way past a popup blocker.
 function _showResyncRetry(prevSynced) {
@@ -6122,29 +6188,13 @@ async function _resyncExistingGcals(prevSynced) {
   for (const [email, cals] of Object.entries(byEmail)) {
     const setText = t => { const el = document.getElementById('gcal-resync-text'); if (el) el.textContent = t; };
 
-    // Get a fresh token (silent if possible, otherwise prompt)
-    await new Promise(resolve => {
-      const tc = google.accounts.oauth2.initTokenClient({
-        client_id: GCAL_CLIENT_ID,
-        scope: GCAL_SCOPES,
-        hint: email,
-        // Without this the loop just hangs when the popup never opens: the re-sync
-        // reports nothing, changes nothing, and looks like sync is broken. Google
-        // only opens a popup when the silent grant fails, and browsers block it
-        // because we're several awaits past the original click.
-        error_callback: (err) => {
-          const blocked = err && (err.type === 'popup_failed_to_open' || err.type === 'popup_closed');
-          setText(blocked
-            ? `Popup blocked for ${email} — allow popups, then press Retry`
-            : `Couldn't connect to ${email}`);
-          _showResyncRetry(prevSynced);
-          setTimeout(resolve, 100);
-        },
-        callback: async (tokenResponse) => {
-          if (tokenResponse.error) { setText('Auth failed — ' + tokenResponse.error); setTimeout(resolve, 1500); return; }
-          _gcalToken = tokenResponse.access_token;
-          _gcalUserEmail = email;
+    // Cached token when there is one, so the usual re-sync opens no popup at all.
+    const _token = await acquireGcalToken(email, setText, () => _showResyncRetry(prevSynced));
+    if (!_token) continue; // message + Retry already shown; try the next account
+    _gcalToken = _token;
+    _gcalUserEmail = email;
 
+    {
           const now = new Date();
           const _winStart = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
           const _winEnd = new Date(now.getFullYear() + 2, now.getMonth(), now.getDate());
@@ -6169,6 +6219,12 @@ async function _resyncExistingGcals(prevSynced) {
                 let url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(appCal._gcalId)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=2500`;
                 if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
                 const res = await fetch(url, { headers: { Authorization: 'Bearer ' + _gcalToken } });
+                if (res.status === 401 || res.status === 403) {
+                  clearCachedGcalToken(email);
+                  setText(`${email} needs re-authorising — press Retry`);
+                  _showResyncRetry(prevSynced);
+                  pagesOk = false; break;
+                }
                 const data = await res.json();
                 if (data.error || !data.items) { pagesOk = false; break; }
                 sawAnyPage = true;
@@ -6234,11 +6290,7 @@ async function _resyncExistingGcals(prevSynced) {
             if (!document.getElementById('gcal-resync-retry')) progress.remove();
             render(); renderSidebar(); scheduleEventNotifications();
           }, 2000);
-          resolve();
-        }
-      });
-      tc.requestAccessToken({ prompt: '' }); // no prompt = silent if possible
-    });
+    }
   }
 }
 
@@ -6266,6 +6318,9 @@ function _startFullGcalSync() {
         });
         const userInfo = await userRes.json();
         _gcalUserEmail = userInfo.email || 'Google Calendar';
+        // Cache under the real address, so a re-sync in the same tab needs no popup.
+        // Must come after the userinfo call — before it, _gcalUserEmail is still stale.
+        if (userInfo.email) cacheGcalToken(userInfo.email, tokenResponse);
       } catch(e) { _gcalUserEmail = 'Google Calendar'; }
       await fetchGoogleCalendars();
     }
