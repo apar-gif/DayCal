@@ -1242,6 +1242,9 @@ let _flushP = null;
 let _outboxRetryTimer = null;
 let _outboxPersistP = Promise.resolve(true), _outboxPersistQueued = false;
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function _isUuid(v) { return typeof v === 'string' && UUID_RE.test(v); }
+
 function _newId() {
   if (crypto.randomUUID) return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));
@@ -1395,6 +1398,21 @@ async function _drainOutbox() {
   if (stalled) return 'stalled';
   clearTimeout(_outboxRetryTimer); _outboxRetryTimer = null;
   return 'empty';
+}
+
+// Self-heal: events whose calendar id never made it to the server (an old local
+// numeric id) can't be saved. Repoint them at a real calendar and re-save.
+async function _repairOrphanEvents() {
+  const fallback = calendars.find(c => _isUuid(c.id));
+  if (!fallback) return;
+  const orphans = events.filter(e => !_isUuid(e.calId) || !calendars.find(c => c.id == e.calId));
+  if (!orphans.length) return;
+  orphans.forEach(e => {
+    const own = calendars.find(c => c.id == e.calId);
+    e.calId = (own && _isUuid(own.id)) ? own.id : fallback.id;
+  });
+  await Promise.all(orphans.map(e => dbSaveEvent(e)));
+  console.log(`Repaired ${orphans.length} event(s) with a missing calendar`);
 }
 
 function _updateSyncBadge() {
@@ -5466,6 +5484,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       // If anything is still pending (offline / server down) keep the local copy.
       await _flushOutbox();
       const fresh = await loadFromSupabase();
+      await _repairOrphanEvents();
       loadBanner.remove();
       if (!fresh && hasCached) {
         showToast(_outbox.length ? 'Some changes haven\'t synced yet — showing this device\'s copy'
@@ -5746,6 +5765,14 @@ function scheduleEventNotifications() {
 async function dbSaveEvent(ev) {
   if (!_supaUser) { saveToStorage(); return true; }
   if (!ev._dbId) ev._dbId = _newId(); // client UUID → upsert is idempotent
+  // cal_id must be a real server UUID. A local numeric id (e.g. the built-in
+  // Personal/Work defaults) would be rejected by Postgres and the event dropped.
+  if (!_isUuid(ev.calId)) {
+    const own = calendars.find(c => c.id == ev.calId);
+    if (own && !own._dbId) await dbSaveCalendar(own);        // gives it a UUID, repoints its events
+    else ev.calId = (calendars.find(c => _isUuid(c.id)) || {}).id;
+    if (!_isUuid(ev.calId)) { console.error('dbSaveEvent: no valid calendar for', ev.title, ev.date); return false; }
+  }
   const row = {
     id: ev._dbId,
     updated_at: new Date().toISOString(),
