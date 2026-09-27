@@ -1204,6 +1204,7 @@ function _cacheSnapshot() {
   try { _timerTaskId = timerTaskId; _timerSecondsLeft = timerSecondsLeft; } catch(e) {}
   return JSON.stringify({
     uid: _currentUid(),
+    email: (_supaUser && _supaUser.email) || null,
     calendars, events, tasks, taskNextId, groups, groupNextId,
     calNextId: nextId,
     timerTaskId: _timerTaskId,
@@ -1241,6 +1242,14 @@ const _opWaiters = new WeakMap();  // op -> [resolve], memory only
 let _flushP = null;
 let _outboxRetryTimer = null;
 let _outboxPersistP = Promise.resolve(true), _outboxPersistQueued = false;
+
+// Phase 3: true when the app was unlocked from the local encrypted cache with no
+// Supabase session. Writes still queue in the outbox; they sync at the next
+// online sign-in. Nothing is sent to the server in this mode (there's no JWT).
+let _offlineMode = false;
+async function _hasLocalCache() {
+  try { const rec = await _idbGet(CACHE_ID); return !!(rec && rec.ct); } catch(e) { return false; }
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function _isUuid(v) { return typeof v === 'string' && UUID_RE.test(v); }
@@ -1368,7 +1377,7 @@ function _flushOutbox() {
 async function _drainOutbox() {
   let rejected = 0, stalled = false;
   while (_outbox.length) {
-    if (!_currentUid() || !navigator.onLine) { _outboxStalled(); return 'stalled'; }
+    if (!_currentUid() || !navigator.onLine || _offlineMode) { _outboxStalled(); return 'stalled'; }
     // Batch consecutive ops of the same table + kind
     const head = _outbox[0], batch = [head];
     for (let i = 1; i < _outbox.length && batch.length < OUTBOX_BATCH; i++) {
@@ -1427,11 +1436,15 @@ function _updateSyncBadge() {
     document.body.appendChild(el);
   }
   const what = `${n} change${n === 1 ? '' : 's'}`;
-  el.textContent = !navigator.onLine ? `Offline · ${what} waiting to sync`
+  el.textContent = _offlineMode || !navigator.onLine ? `Offline · ${what} waiting to sync`
                  : _flushP           ? `Syncing ${what}…`
                  :                     `${what} waiting to sync`;
 }
-window.addEventListener('online',  () => { _updateSyncBadge(); if (_outbox.length) _flushOutbox(); });
+window.addEventListener('online',  () => {
+  _updateSyncBadge();
+  if (_offlineMode) { showToast('Back online — reload and sign in to sync your changes'); return; }
+  if (_outbox.length) _flushOutbox();
+});
 window.addEventListener('offline', _updateSyncBadge);
 
 async function loadFromStorage() {
@@ -5411,7 +5424,16 @@ async function authSubmit() {
   // Start deriving the local-cache key in parallel with the network sign-in;
   // the SIGNED_IN handler awaits it before reading the encrypted cache.
   beginCacheUnlock(password);
-  const { data, error } = await _supa.auth.signInWithPassword({ email, password });
+  let data, error;
+  try {
+    ({ data, error } = await _supa.auth.signInWithPassword({ email, password }));
+  } catch (e) { error = { message: 'Failed to fetch' }; }
+  // No connection? Fall back to unlocking this device's encrypted copy.
+  if (error && (!navigator.onLine || /fetch|network/i.test(error.message || '')) && await _hasLocalCache()) {
+    btn.textContent = origText; btn.disabled = false;
+    if (await authOfflineUnlock()) return;
+    return;
+  }
   if (error) {
     lockCache();
     err.textContent = error.message;
@@ -5440,17 +5462,92 @@ async function authSignOut() {
   }
   await _flushLocalWrites(); // make sure the encrypted cache/outbox are on disk
   lockCache(); // drop the key first so nothing below gets written to the cache
-  await _supa.auth.signOut();
+  try { await _supa.auth.signOut(); } catch(e) {}
   _supaUser = null;
+  _offlineMode = false;
   calendars = [{id:1,name:'Personal',color:'#4A90D9',visible:true},{id:2,name:'Work',color:'#E05C5C',visible:true}];
   events = []; tasks = []; groups = [];
   taskNextId = 1; groupNextId = 1; nextId = 3;
   render(); renderSidebar(); renderTasks();
   document.getElementById('auth-overlay').classList.remove('hidden');
+  refreshAuthOfflineUI();
   document.getElementById('app').classList.remove('authenticated');
   const timerBlock2 = document.getElementById('timer-block');
   if (timerBlock2) timerBlock2.style.display = 'none';
 }
+
+
+// ── Offline unlock (Phase 3) ────────────────────────────────────────────────
+// Supabase can't verify a password without a network, so offline "sign-in" is
+// decrypting this device's cache: the right password produces a key that works,
+// a wrong one simply fails to decrypt. Requires one online sign-in on this
+// device first (that's what writes the cache).
+async function authOfflineUnlock() {
+  const password = document.getElementById('auth-password').value;
+  const err = document.getElementById('auth-err');
+  const btn = document.getElementById('auth-offline-btn');
+  err.style.color = 'var(--danger)';
+  err.textContent = '';
+  if (!password) { err.textContent = 'Enter your password to unlock.'; return false; }
+  if (!(await _hasLocalCache())) {
+    err.textContent = 'Nothing saved on this device yet — sign in online once first.';
+    return false;
+  }
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Unlocking…'; btn.disabled = true; }
+  try {
+    await beginCacheUnlock(password);
+    const d = await _encGet(CACHE_ID);
+    if (!d || !d.uid) {
+      lockCache();
+      err.textContent = 'That password doesn\'t match the data saved on this device.';
+      return false;
+    }
+    _offlineMode = true;
+    _supaUser = { id: d.uid, email: d.email || 'Offline', _offline: true };
+    await bootOffline();
+    return true;
+  } catch (e) {
+    console.error('Offline unlock failed:', e);
+    lockCache();
+    err.textContent = 'Couldn\'t unlock this device\'s saved data.';
+    return false;
+  } finally {
+    if (btn) { btn.textContent = origText; btn.disabled = false; }
+  }
+}
+
+// Same start-up as a normal sign-in, minus everything that needs the server.
+async function bootOffline() {
+  const authOverlay = document.getElementById('auth-overlay');
+  const appEl = document.getElementById('app');
+  const mnav = document.getElementById('mobile-nav');
+  if (authOverlay) authOverlay.classList.add('hidden');
+  if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = ''; appEl.style.opacity = ''; }
+  if (mnav) mnav.style.display = '';
+
+  await loadFromStorage();
+  await _loadUnsavedQueue();
+  await _loadOutbox();
+  render(); renderSidebar(); renderTasks();
+  scheduleEventNotifications();
+  showUserBar();
+  _updateSyncBadge();
+  showToast('Offline — changes save on this device and sync when you sign in online');
+  if (typeof isMobile === 'function' && isMobile()) requestAnimationFrame(() => mobileNav('cal'));
+}
+
+// Show/hide the unlock button as the connection comes and goes.
+async function refreshAuthOfflineUI() {
+  const btn = document.getElementById('auth-offline-btn');
+  const sub = document.getElementById('auth-sub');
+  if (!btn) return;
+  const available = !navigator.onLine && await _hasLocalCache();
+  btn.style.display = available ? 'block' : 'none';
+  if (available && sub) sub.textContent = 'You\'re offline — unlock with your password';
+}
+window.addEventListener('offline', refreshAuthOfflineUI);
+window.addEventListener('online', refreshAuthOfflineUI);
 
 // ── Listen for auth state changes ──
 _supa.auth.onAuthStateChange(async (event, session) => {
@@ -6043,6 +6140,7 @@ async function dbDeleteGroup(group) {
     if (authOverlay) authOverlay.classList.remove('hidden');
     if (appEl) { appEl.classList.remove('authenticated'); appEl.style.visibility = 'hidden'; appEl.style.opacity = '0'; }
     if (timerBlock) timerBlock.style.display = 'none';
+    refreshAuthOfflineUI();
     if (message) {
       const errEl = document.getElementById('auth-err');
       if (errEl) {
@@ -6826,6 +6924,7 @@ async function importSelectedGcals() {
       <input class="auth-input" id="auth-confirm" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')authSubmit()"/>
     </div>
     <button class="auth-btn" id="auth-submit-btn" onclick="authSubmit()">Sign In</button>
+    <button class="auth-btn secondary" id="auth-offline-btn" style="display:none;margin-top:8px;" onclick="authOfflineUnlock()">Unlock offline</button>
     <div class="auth-divider">or</div>
     <button class="auth-btn secondary" id="auth-forgot-btn" onclick="authForgot()">Forgot password?</button>
     <div class="auth-switch" id="auth-switch-text">Don't have an account? <span onclick="toggleAuthMode()">Sign up</span></div>
