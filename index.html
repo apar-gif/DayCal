@@ -72,6 +72,8 @@
   .daycal-toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:9px 16px;border-radius:10px;font-size:13px;font-weight:500;z-index:9999;pointer-events:none;opacity:0;transition:opacity .2s;white-space:nowrap;}
   .daycal-toast.show{opacity:1;}
   .daycal-toast.warn{background:#b45309;}
+  .sync-badge{position:fixed;right:16px;bottom:16px;z-index:9000;background:var(--text);color:var(--bg);font-size:12px;font-weight:500;padding:6px 12px;border-radius:999px;opacity:.85;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.15);white-space:nowrap;}
+  @media(max-width:768px){.sync-badge{right:auto;left:50%;transform:translateX(-50%);bottom:auto;top:calc(env(safe-area-inset-top) + 8px);}}
   .sidebar{width:230px;flex-shrink:0;border:1px solid var(--border);border-radius:16px;padding:0;display:flex;flex-direction:column;gap:0;margin-right:16px;background:var(--bg);align-self:stretch;box-shadow:var(--sh);overflow:hidden;}
   .main{flex:1;min-width:0;max-width:100%;display:flex;flex-direction:column;gap:20px;overflow-x:hidden;}
 
@@ -356,11 +358,6 @@
   .sched-slot-label{font-size:10px;font-weight:600;color:var(--accent-text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;}
   .sched-slot-time{font-size:13px;font-weight:500;color:var(--accent-text);}
   .sched-slot-dur{font-size:12px;color:var(--accent-text);opacity:.8;margin-top:2px;}
-  .sched-refresh-btn{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;letter-spacing:.04em;padding:2px 8px;border-radius:6px;background:var(--bg);border:.5px solid var(--accent);color:var(--accent-text);cursor:pointer;text-transform:uppercase;}
-  .sched-refresh-btn:hover{background:var(--accent)22;}
-  .sched-refresh-btn i{font-size:12px;}
-  .sched-refresh-btn.spinning i{animation:schedSpin .6s linear;}
-  @keyframes schedSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
   .sched-slot-nav{display:flex;gap:5px;margin-top:8px;}
   .sched-slot-nav button{font-size:11px;padding:3px 10px;border-radius:6px;background:var(--bg);border:.5px solid var(--accent);color:var(--accent-text);cursor:pointer;transition:background .15s;}
   .sched-slot-nav button:hover{background:var(--accent)22;}
@@ -1079,33 +1076,352 @@ const COLORS=[
 ];
 let selColor=COLORS[0];
 let calendars=[{id:1,name:'Personal',color:'#4A90D9',visible:true},{id:2,name:'Work',color:'#E05C5C',visible:true}];
-// ── localStorage persistence ──
-const LS_KEY = 'calapp_v1';
-function clearStorage() {
+// ── Encrypted local cache ──────────────────────────────────────────────────
+// Calendar data is cached in IndexedDB, encrypted with AES-GCM. The key is
+// derived from the account password (PBKDF2-SHA256) at sign-in and lives only
+// in memory — nothing sensitive is written to disk unencrypted, and the cache is
+// unreadable once the page is closed/reloaded until the password is entered.
+const LS_KEY  = 'calapp_v1';      // LEGACY plaintext cache — removed on load
+const TZ_KEY  = 'daycal_tz';      // timezone preference (not sensitive, plaintext)
+const IDB_NAME = 'daycal', IDB_STORE = 'kv';
+const CACHE_ID = 'cache_v1', QUEUE_ID = 'unsaved_q_v1', SALT_ID = 'kdf_salt';
+const KDF_ITER = 600000;
+
+let _cacheKey = null;          // CryptoKey (non-extractable), memory only
+let _cacheKeyPromise = null;   // pending derivation, awaited by loaders
+let _unsavedQ = [];            // in-memory mirror of the encrypted unsaved-task queue
+let _saveTimer = null;
+let _writeChain = Promise.resolve();
+let _idbPromise = null;
+
+function _currentUid() { try { return _supaUser ? _supaUser.id : null; } catch(e) { return null; } }
+
+function _idb() {
+  if (!_idbPromise) {
+    _idbPromise = new Promise((res, rej) => {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+    _idbPromise.catch(() => { _idbPromise = null; });
+  }
+  return _idbPromise;
+}
+async function _idbReq(mode, fn) {
+  const db = await _idb();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, mode);
+    const req = fn(tx.objectStore(IDB_STORE));
+    tx.oncomplete = () => res(req.result);
+    tx.onerror = tx.onabort = () => rej(tx.error);
+  });
+}
+const _idbGet = k      => _idbReq('readonly',  s => s.get(k));
+const _idbSet = (k, v) => _idbReq('readwrite', s => s.put(v, k));
+const _idbDel = k      => _idbReq('readwrite', s => s.delete(k));
+
+async function _getSalt() {
+  let salt = await _idbGet(SALT_ID);
+  if (!salt) { salt = crypto.getRandomValues(new Uint8Array(16)); await _idbSet(SALT_ID, salt); }
+  return salt;
+}
+async function _deriveCacheKey(password) {
+  const salt = await _getSalt();
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: KDF_ITER, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+// Called with the typed password just before signInWithPassword.
+// _unlockGen guards against a slow derivation from an earlier (failed) attempt
+// resolving after lockCache() or a newer attempt and installing the wrong key.
+let _unlockGen = 0;
+function beginCacheUnlock(password) {
+  const gen = ++_unlockGen;
+  _cacheKey = null;
+  _cacheKeyPromise = _deriveCacheKey(password)
+    .then(k => { if (gen !== _unlockGen) return null; _cacheKey = k; return k; })
+    .catch(e => { console.warn('Cache key derivation failed', e); return null; });
+  return _cacheKeyPromise;
+}
+// Drop the key and anything decrypted that isn't already in app state.
+function lockCache() {
+  _unlockGen++;
+  clearTimeout(_saveTimer); _saveTimer = null;
+  _cacheKey = null; _cacheKeyPromise = null; _unsavedQ = [];
+  _outbox = [];
+  clearTimeout(_outboxRetryTimer); _outboxRetryTimer = null;
+  _updateSyncBadge();
+}
+// Finish any pending encrypted writes (cache + outbox) — call before lockCache().
+async function _flushLocalWrites() {
+  if (_saveTimer) _writeCacheNow();
+  if (_cacheKey) _persistOutbox();
+  await _writeChain;
+}
+
+// Serialise writes so an older snapshot can never land after a newer one.
+// Resolves true/false for success rather than throwing.
+function _queueWrite(fn) {
+  const p = _writeChain.then(fn);
+  _writeChain = p.catch(e => console.warn('Encrypted cache write failed', e));
+  return p.then(() => true, () => false);
+}
+async function _encPut(id, jsonStr) {
+  const key = _cacheKey;
+  if (!key) throw new Error('cache locked');
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(id) },
+    key, new TextEncoder().encode(jsonStr));
+  if (key !== _cacheKey) throw new Error('cache locked during write'); // signed out mid-write
+  await _idbSet(id, { v: 1, iv, ct });
+}
+// Returns the decrypted object, or null if missing / wrong password / other account.
+async function _encGet(id) {
+  if (_cacheKeyPromise) await _cacheKeyPromise;
+  if (!_cacheKey) return null;
+  try {
+    const rec = await _idbGet(id);
+    if (!rec || !rec.ct) return null;
+    const pt = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: rec.iv, additionalData: new TextEncoder().encode(id) },
+      _cacheKey, rec.ct);
+    return JSON.parse(new TextDecoder().decode(pt));
+  } catch(e) { return null; }
+}
+
+async function clearStorage() {
   if (!confirm('Clear all events, tasks, and calendars? This cannot be undone.')) return;
+  clearTimeout(_saveTimer); _saveTimer = null;
+  try { await _idbDel(CACHE_ID); } catch(e) {}
   localStorage.removeItem(LS_KEY);
   location.reload();
 }
-function saveToStorage() {
-  try {
-    let _tz = null;
-    try { _tz = appTimezone; } catch(e) {}
-    let _timerTaskId = null, _timerSecondsLeft = 0;
-    try { _timerTaskId = timerTaskId; _timerSecondsLeft = timerSecondsLeft; } catch(e) {}
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      calendars, events, tasks, taskNextId, groups, groupNextId,
-      calNextId: nextId,
-      appTimezone: _tz,
-      timerTaskId: _timerTaskId,
-      timerSecondsLeft: _timerSecondsLeft
-    }));
-  } catch(e) { console.warn('localStorage save failed', e); }
+function _cacheSnapshot() {
+  let _timerTaskId = null, _timerSecondsLeft = 0;
+  try { _timerTaskId = timerTaskId; _timerSecondsLeft = timerSecondsLeft; } catch(e) {}
+  return JSON.stringify({
+    uid: _currentUid(),
+    calendars, events, tasks, taskNextId, groups, groupNextId,
+    calNextId: nextId,
+    timerTaskId: _timerTaskId,
+    timerSecondsLeft: _timerSecondsLeft
+  });
 }
-function loadFromStorage() {
+function _writeCacheNow() {
+  clearTimeout(_saveTimer); _saveTimer = null;
+  if (!_cacheKey || !_currentUid()) return;
+  const snap = _cacheSnapshot(); // capture now, before any later sign-out resets state
+  _queueWrite(() => _encPut(CACHE_ID, snap));
+}
+// Same synchronous signature as before; the encrypted write is debounced.
+function saveToStorage() {
+  try { if (appTimezone) localStorage.setItem(TZ_KEY, appTimezone); } catch(e) {}
+  if (!_cacheKey || !_currentUid()) return; // locked → never write unencrypted
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(_writeCacheNow, 250);
+}
+// Don't lose a pending debounced write when the tab is backgrounded/closed.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && _saveTimer) _writeCacheNow();
+});
+
+// ── Sync outbox (Phase 2) ──────────────────────────────────────────────────
+// Every write to Supabase goes through here. Ops are persisted encrypted
+// (OUTBOX_ID) and retried until the server accepts them, so edits made offline
+// or during a network blip are never lost. Rows carry client-generated UUIDs and
+// are sent with upsert, so a retry can never create a duplicate. Each row also
+// carries updated_at; a DB trigger keeps the newer version (last-write-wins).
+const OUTBOX_ID = 'outbox_v1';
+const OUTBOX_BATCH = 200;
+let _outbox = [];                  // [{ table, op:'upsert'|'delete', id, row?, t }]
+const _opWaiters = new WeakMap();  // op -> [resolve], memory only
+let _flushP = null;
+let _outboxRetryTimer = null;
+let _outboxPersistP = Promise.resolve(true), _outboxPersistQueued = false;
+
+function _newId() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+
+// Coalesced: many enqueues in one tick → one encrypted write of the latest state.
+function _persistOutbox() {
+  if (_outboxPersistQueued) return _outboxPersistP;
+  _outboxPersistQueued = true;
+  _outboxPersistP = _queueWrite(async () => {
+    _outboxPersistQueued = false;
+    const uid = _currentUid();
+    if (!_cacheKey || !uid) return;
+    await _encPut(OUTBOX_ID, JSON.stringify({ uid, ops: _outbox }));
+  });
+  return _outboxPersistP;
+}
+
+async function _loadOutbox() {
+  const stored = await _encGet(OUTBOX_ID);
+  const fromDisk = (stored && Array.isArray(stored.ops) && stored.uid === _currentUid()) ? stored.ops : [];
+  const sessionOps = _outbox;   // anything queued before the load finished is newer
+  _outbox = fromDisk;
+  sessionOps.forEach(_enqueue);
+  _updateSyncBadge();
+}
+
+// One entry per row: a newer op replaces an older one for the same row (and
+// inherits its waiters). Deletes move to the end so dependent rows go first.
+function _enqueue(op) {
+  // Deleting a calendar removes its events server-side, so pending event writes
+  // for it are moot (and would fail if the calendar never reached the server).
+  if (op.table === 'calendars' && op.op === 'delete') {
+    _outbox = _outbox.filter(o => {
+      const moot = o.table === 'events' && o.row && o.row.cal_id === op.id;
+      if (moot) _settle(o, 'ok');
+      return !moot;
+    });
+  }
+  const i = _outbox.findIndex(o => o.table === op.table && o.id === op.id);
+  if (i >= 0) {
+    const prev = _outbox[i];
+    const w = (_opWaiters.get(prev) || []).concat(_opWaiters.get(op) || []);
+    _opWaiters.delete(prev);
+    if (w.length) _opWaiters.set(op, w);
+    if (op.op === 'delete') { _outbox.splice(i, 1); _outbox.push(op); }
+    else _outbox[i] = op;
+  } else {
+    _outbox.push(op);
+  }
+}
+
+// Queue a write and try to send it. Resolves 'ok' (on the server),
+// 'queued' (saved on this device, will retry) or 'rejected' (server refused it).
+function _submit(table, op, id, row) {
+  if (_currentUid() === 'preview-user') return Promise.resolve('ok'); // ?preview=1 fake data
+  const entry = { table, op, id, t: Date.now() };
+  if (row) entry.row = row;
+  const p = new Promise(res => _opWaiters.set(entry, [res]));
+  _enqueue(entry);
+  _persistOutbox();
+  saveToStorage();
+  _updateSyncBadge();
+  _flushOutbox();
+  return p;
+}
+
+function _settle(op, result) {
+  const w = _opWaiters.get(op);
+  if (w) { _opWaiters.delete(op); w.forEach(r => r(result)); }
+}
+function _outboxDone(ops, result) {
+  const done = new Set(ops);
+  _outbox = _outbox.filter(o => !done.has(o));  // by identity: a newer op for the same row stays
+  ops.forEach(o => _settle(o, result));
+  _persistOutbox();
+}
+function _outboxStalled() {
+  _outbox.forEach(o => _settle(o, 'queued'));
+  _persistOutbox();
+  if (!_outboxRetryTimer && _currentUid()) {
+    _outboxRetryTimer = setTimeout(() => { _outboxRetryTimer = null; _flushOutbox(); }, 30000);
+  }
+}
+// Retry later (never drop) for: network down, auth expired/permission denied,
+// rate limit, server error, and schema mismatch (e.g. updated_at column not yet
+// added) — those are config/connectivity problems, not bad data.
+// Any other 4xx (invalid value, FK violation) will never succeed → drop the op.
+function _isTransient(res) {
+  if (!res || !res.error) return !res;
+  const s = res.status, code = res.error.code || '';
+  return !s || s === 401 || s === 403 || s === 408 || s === 429 || s >= 500
+      || code === '42501' || code === 'PGRST204' || code === '42703';
+}
+async function _sendOps(ops) {
+  const q = _supa.from(ops[0].table);
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return false;
-    const d = JSON.parse(raw);
+    return ops[0].op === 'delete'
+      ? await q.delete().in('id', ops.map(o => o.id))
+      : await q.upsert(ops.map(o => o.row));
+  } catch (e) { return null; }
+}
+
+function _flushOutbox() {
+  if (_flushP) return _flushP;
+  _flushP = (async () => {
+    try {
+      // Re-check after each drain: ops submitted while the previous drain was
+      // wrapping up would otherwise see _flushP still set and be stranded.
+      let r;
+      do { r = await _drainOutbox(); } while (r !== 'stalled' && _outbox.length);
+      if (r === 'stalled') _outbox.forEach(o => _settle(o, 'queued'));
+    } finally { _flushP = null; _updateSyncBadge(); }
+  })();
+  _updateSyncBadge();
+  return _flushP;
+}
+async function _drainOutbox() {
+  let rejected = 0, stalled = false;
+  while (_outbox.length) {
+    if (!_currentUid() || !navigator.onLine) { _outboxStalled(); return 'stalled'; }
+    // Batch consecutive ops of the same table + kind
+    const head = _outbox[0], batch = [head];
+    for (let i = 1; i < _outbox.length && batch.length < OUTBOX_BATCH; i++) {
+      const o = _outbox[i];
+      if (o.table !== head.table || o.op !== head.op) break;
+      batch.push(o);
+    }
+    const res = await _sendOps(batch);
+    if (res && !res.error) { _outboxDone(batch, 'ok'); continue; }
+    if (_isTransient(res)) {
+      console.warn('Sync paused:', res && res.error ? res.error.message : 'network error');
+      _outboxStalled(); return 'stalled';
+    }
+    // Permanent failure — retry one by one so a single bad row can't sink the batch
+    for (const o of batch) {
+      if (!_outbox.includes(o)) continue;
+      const r = batch.length === 1 ? res : await _sendOps([o]);
+      if (r && !r.error) { _outboxDone([o], 'ok'); continue; }
+      if (_isTransient(r)) { _outboxStalled(); stalled = true; break; }
+      console.error(`Sync rejected (${o.table} ${o.op} ${o.id}):`, r.error.message, o.row || '');
+      _outboxDone([o], 'rejected');
+      rejected++;
+    }
+    if (stalled) break;
+  }
+  if (rejected) showToast(`${rejected} change${rejected === 1 ? '' : 's'} couldn't be saved to the server`, true);
+  if (stalled) return 'stalled';
+  clearTimeout(_outboxRetryTimer); _outboxRetryTimer = null;
+  return 'empty';
+}
+
+function _updateSyncBadge() {
+  if (!document.body) return;
+  let el = document.getElementById('sync-badge');
+  const n = _outbox.length;
+  if (!n || !_currentUid()) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-badge';
+    el.className = 'sync-badge';
+    document.body.appendChild(el);
+  }
+  const what = `${n} change${n === 1 ? '' : 's'}`;
+  el.textContent = !navigator.onLine ? `Offline · ${what} waiting to sync`
+                 : _flushP           ? `Syncing ${what}…`
+                 :                     `${what} waiting to sync`;
+}
+window.addEventListener('online',  () => { _updateSyncBadge(); if (_outbox.length) _flushOutbox(); });
+window.addEventListener('offline', _updateSyncBadge);
+
+async function loadFromStorage() {
+  try {
+    const d = await _encGet(CACHE_ID);
+    if (!d) return false;
+    if (d.uid && d.uid !== _currentUid()) return false; // another account's cache
+    // (Timezone is restored separately from TZ_KEY at startup.)
     if (d.calendars && d.calendars.length)  calendars = d.calendars.map(c => ({ ...c, id: parseInt(c.id) || c.id }));
     if (d.events) {
       events = d.events.map(e => ({ ...e, calId: parseInt(e.calId) || e.calId }));
@@ -1161,7 +1477,7 @@ function loadFromStorage() {
     }
 
     return true;
-  } catch(e) { console.warn('localStorage load failed', e); return false; }
+  } catch(e) { console.warn('Encrypted cache load failed', e); return false; }
 }
 let nextId=3,openMenu=null,renamingId=null,deleteId=null,isDark=false;
 let gcalGroupVisibility = {};
@@ -1262,7 +1578,6 @@ function renderSidebar(){saveToStorage();
   });
 
   function renderCalItem(c) {
-    const blocks = calBlocksTime(c.id);
     return `<div class="cal-item${c.visible?' visible':''}" id="item-${c.id}">
       <div class="cal-item-row" onclick="toggleVis('${c.id}')">
         <div class="cal-dot" style="background:${c.color}"></div>
@@ -1275,9 +1590,6 @@ function renderSidebar(){saveToStorage();
         <div class="edit-menu-item" style="flex-direction:column;align-items:flex-start;gap:6px;">
           <div style="display:flex;align-items:center;gap:9px;"><i class="ti ti-palette"></i>Change color</div>
           <div class="color-picker-row" id="cp-${c.id}"></div>
-        </div>
-        <div class="edit-menu-item" onclick="event.stopPropagation();toggleCalBlocking('${c.id}')" title="When off, events on this calendar stay visible but the scheduler treats that time as free">
-          <i class="ti ti-${blocks?'square-check':'square'}"></i>Blocks free time
         </div>
         <div class="edit-menu-item danger" onclick="askDelete('${c.id}')"><i class="ti ti-trash"></i>Delete</div>
       </div>
@@ -1350,24 +1662,7 @@ function toggleGcalGroup(email) {
   render();
 }
 function toggleVis(id){if(openMenu===id||renamingId===id)return;const c=calendars.find(x=>x.id==id);if(c){c.visible=!c.visible;dbSaveCalendar(c);}renderSidebar();render();}
-function toggleMenu(e,id){e.stopPropagation();openMenu=openMenu===id?null:id;renamingId=null;renderSidebar();_positionEditMenu(openMenu);}
-// The menu is absolutely positioned at left:100% — i.e. outside the sidebar, which is
-// overflow:hidden, so it was clipped away and the pencil looked dead. Re-anchor it as
-// position:fixed against the pencil's screen rect so it escapes the clip. Stays inside
-// .cal-item in the DOM, so the outside-click handler still recognises it.
-function _positionEditMenu(id){
-  if(!id) return;
-  const menu=document.getElementById('menu-'+id);
-  const item=document.getElementById('item-'+id);
-  const anchor=item?item.querySelector('.cal-edit-btn'):null;
-  if(!menu||!anchor) return;
-  const r=anchor.getBoundingClientRect();
-  const w=175,h=menu.offsetHeight||240;
-  menu.style.position='fixed';
-  menu.style.margin='0';
-  menu.style.left=Math.max(8,Math.min(r.right+6,window.innerWidth-w-8))+'px';
-  menu.style.top=Math.max(8,Math.min(r.top,window.innerHeight-h-8))+'px';
-}
+function toggleMenu(e,id){e.stopPropagation();openMenu=openMenu===id?null:id;renamingId=null;renderSidebar();}
 function changeColor(e,id,col){e.stopPropagation();const c=calendars.find(x=>x.id==id);if(c){c.color=col;dbSaveCalendar(c);}openMenu=null;renderSidebar();render();}
 function startRename(id){openMenu=null;renamingId=id;renderSidebar();}
 function cancelRename(){renamingId=null;renderSidebar();}
@@ -1798,24 +2093,16 @@ function parseIcs(text){
   const evts=[];const lines=text.replace(/\r\n /g,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');let cur=null;
   for(const raw of lines){const line=raw.trim();
     if(line==='BEGIN:VEVENT'){cur={};}
-    else if(line==='END:VEVENT'&&cur){
-      // The app has no multi-day timed events: an end that lands on a later date (a
-      // 23:00→01:00 event, or one that crosses midnight after timezone conversion)
-      // would store endTime < startTime. Clamp it to the end of the start day.
-      if(cur.date&&cur.startTime&&cur.endDate&&cur.endDate>cur.date)cur.endTime='23:59';
-      delete cur.endDate;
-      if(cur.date)evts.push(cur);cur=null;}
+    else if(line==='END:VEVENT'&&cur){if(cur.date)evts.push(cur);cur=null;}
     else if(cur){
       if(line.startsWith('SUMMARY:'))cur.title=line.slice(8).replace(/\\n/g,' ').replace(/\\,/g,',');
       else if(line.startsWith('DTSTART;VALUE=DATE:')){cur.date=icsD(line.slice(19));cur.allDay=true;}
-      else if(line.startsWith('DTSTART:')||line.startsWith('DTSTART;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v,_icsTzid(line));if(p){cur.date=p.date;cur.startTime=p.time;cur.allDay=false;}}
-      else if(line.startsWith('DTEND:')||line.startsWith('DTEND;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v,_icsTzid(line));if(p){cur.endTime=p.time;cur.endDate=p.date;}}
+      else if(line.startsWith('DTSTART:')||line.startsWith('DTSTART;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v);if(p){cur.date=p.date;cur.startTime=p.time;cur.allDay=false;}}
+      else if(line.startsWith('DTEND:')||line.startsWith('DTEND;')){const v=line.split(':').slice(1).join(':');const p=icsParseDateTime(v);if(p)cur.endTime=p.time;}
     }
   }
   return evts;
 }
-// TZID parameter from a property line, e.g. DTSTART;TZID=America/New_York:20260916T090000
-function _icsTzid(line){const head=line.split(':')[0];const m=head.match(/;TZID=("[^"]*"|[^;]*)/i);return m?m[1].replace(/^"|"$/g,'').trim():null;}
 function icsD(s){if(!s||s.length<8)return null;return s.slice(0,4)+'-'+s.slice(4,6)+'-'+s.slice(6,8);}
 function icsParseDateTime(v){
   // v is the part after DTSTART: or DTSTART;TZID=...:
@@ -1853,9 +2140,8 @@ async function confirmImport(){
   });
   closeImport();render();parsedIcsEvents=[];
   if(toSave.length){
-    const failed=await dbSaveEventsBatched(toSave);
-    if(failed.length)await _reportFailedSaves(failed);
-    else showToast(`Imported ${toSave.length} event${toSave.length===1?'':'s'}`);
+    await Promise.all(toSave.map(e=>dbSaveEvent(e)));
+    showToast(`Imported ${toSave.length} event${toSave.length===1?'':'s'}`);
   }
 }
 
@@ -1863,21 +2149,6 @@ async function confirmImport(){
 function eventsForDate(ds){return events.filter(e=>{if(e._pendingNew)return e.date===ds;const c=calendars.find(x=>x.id==e.calId);return e.date===ds&&c&&c.visible;}).sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));}
 function dateStr(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
 function calColor(calId){const c=calendars.find(x=>x.id==calId);return c?c.color:'#888';}
-
-// ── Calendars that stay visible but don't count as busy ──
-// Sleep, holidays, all-day "commitments" you'd still work through. Kept in
-// localStorage per-device rather than in Supabase, so no schema change.
-let nonBlockingCals = new Set();
-try { nonBlockingCals = new Set((JSON.parse(localStorage.getItem('daycal_nonblocking') || '[]') || []).map(String)); } catch(e) {}
-function calBlocksTime(calId){ return !nonBlockingCals.has(String(calId)); }
-function toggleCalBlocking(id){
-  const k = String(id);
-  if (nonBlockingCals.has(k)) nonBlockingCals.delete(k); else nonBlockingCals.add(k);
-  try { localStorage.setItem('daycal_nonblocking', JSON.stringify([...nonBlockingCals])); } catch(e) {}
-  openMenu = null;
-  renderSidebar();
-  render(); // render() refreshes the free-slot panel
-}
 
 // ── View ──
 const viewMeta={year:{label:'Year',icon:'ti-calendar'},month:{label:'Month',icon:'ti-layout-grid'},week:{label:'Week',icon:'ti-columns'},day:{label:'Day',icon:'ti-square'}};
@@ -2504,51 +2775,24 @@ function computeWeekSlots() {
     const ds = dateStr(d.getFullYear(), d.getMonth(), d.getDate());
     const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
 
-    // Previous day, so events that run past midnight can spill their tail onto this one
-    const prev = new Date(d); prev.setDate(d.getDate() - 1);
-    const prevDs = dateStr(prev.getFullYear(), prev.getMonth(), prev.getDate());
-
-    const visible = e => {
-      const cal = calendars.find(c => c.id == e.calId);
-      // Blocks the app itself placed — scheduled task blocks and Now blocks — always
-      // count as busy, whatever calendar they landed on. Otherwise marking that
-      // calendar non-blocking would let the scheduler book straight over your own
-      // work blocks (they default to the same calendar as everything else).
-      const ownBlock = e._scheduled || e.title === 'Block';
-      return cal && cal.visible && (ownBlock || calBlocksTime(e.calId)) && !e.allDay && e.startTime && e.endTime;
-    };
-
     // Get visible events for this day
-    const dayEvs = events.filter(e => e.date === ds && visible(e)).map(e => {
+    const dayEvs = events.filter(e => {
+      const cal = calendars.find(c => c.id === e.calId);
+      return e.date === ds && cal && cal.visible && !e.allDay && e.startTime && e.endTime;
+    }).map(e => {
       const start = timeToMins(e.startTime);
       let end = timeToMins(e.endTime);
-      // A zero-length event (end === start) blocks nothing. It used to hit the
-      // midnight clamp below and swallow the whole rest of the day — a single
-      // 00:00→00:00 event (common from imports) left today with no free slots at
-      // all, so the panel skipped straight to tomorrow.
-      if (end === start) return null;
       // An event that crosses midnight is stored with end < start (e.g. 21:00→06:00).
       // Left as-is, `if (ev.end > cursor)` is false, the cursor never advances past
       // the event, and the end-of-day push emits a slot OVERLAPPING the one just
-      // created. It is busy until midnight here; the tail lands on the next day below.
-      if (end < start) end = 24 * 60;
+      // created. Treat such events as running to the end of the day.
+      if (end <= start) end = 24 * 60;
       return { start, end };
-    }).filter(Boolean);
+    }).sort((a, b) => a.start - b.start);
 
-    // Tails of yesterday's midnight-crossing events (22:00→06:00 ⇒ busy 00:00–06:00 today).
-    // Without this the early hours looked free while the event was still running.
-    events.filter(e => e.date === prevDs && visible(e)).forEach(e => {
-      const start = timeToMins(e.startTime), end = timeToMins(e.endTime);
-      if (end < start && end > 0) dayEvs.push({ start: 0, end });
-    });
-
-    dayEvs.sort((a, b) => a.start - b.start);
-
-    // Skip days entirely in the past. Derive today from the same fresh clock the
-    // loop uses — todayStr() reads the module-level `now`.
-    const _todayStr = dateStr(_now.getFullYear(), _now.getMonth(), _now.getDate());
-    const isToday = ds === _todayStr;
-    const isPast = ds < _todayStr;
+    // Skip days entirely in the past
+    const isToday = ds === todayStr();
+    const isPast = ds < todayStr();
     if (isPast) continue;
 
     // For today, clamp effective start to current time (rounded up to next 5 min)
@@ -2603,58 +2847,17 @@ function renderSchedPanel() {
   renderSchedBody();
 }
 
-// ── Keep free slots in sync with the calendar ──
-// Slot recomputes used to be sprinkled through individual handlers, so any path
-// that forgot the `schedSlots = computeWeekSlots()` line left stale free periods
-// on screen: deleting a calendar (and all its events), a Google re-sync removing
-// cancelled events, an event edited or dragged from the popover. render() runs on
-// every mutation, so refresh from there instead. The per-handler calls still work
-// and are now just redundant.
-let _inSchedSync = false;
-function refreshSchedSlots() {
-  if (!schedPanelOpen || _inSchedSync) return;
-  _inSchedSync = true;
-  try {
-    // Remember where the user was pointing so the view doesn't jump. After a
-    // delete the surrounding gaps merge into one bigger slot, so match on the
-    // first slot that still covers the old start rather than on the index.
-    const prev = schedSlots[schedSlotIndex];
-    schedSlots = computeWeekSlots();
-    if (prev) {
-      const i = schedSlots.findIndex(s => s.date > prev.date || (s.date === prev.date && s.endMins > prev.startMins));
-      schedSlotIndex = i >= 0 ? i : Math.max(0, schedSlots.length - 1);
-    }
-    if (schedSlotIndex >= schedSlots.length) schedSlotIndex = Math.max(0, schedSlots.length - 1);
-    renderSchedPanel();
-  } catch (e) {
-    console.error('refreshSchedSlots', e);
-  } finally {
-    _inSchedSync = false;
-  }
-}
-const _renderBeforeSchedSync = render;
-render = function() {
-  const r = _renderBeforeSchedSync.apply(this, arguments);
-  refreshSchedSlots();
-  return r;
-};
-
-function _schedRefreshBtn() {
-  return `<button class="sched-refresh-btn" id="sched-refresh-btn" onclick="rescanSchedSlots()" title="Re-scan free time from now through the next 7 days"><i class="ti ti-refresh"></i>Rescan</button>`;
-}
-
 function renderSchedSlotBox() {
   const box = document.getElementById('sched-slot-box');
   if (!box) return;
   if (schedSlots.length === 0 || schedSlotIndex >= schedSlots.length) {
-    box.innerHTML = `<div class="sched-slot-label"><span>Current slot</span>${_schedRefreshBtn()}</div><div class="sched-slot-time" style="color:var(--text2);">No free slots this week</div>`;
+    box.innerHTML = `<div class="sched-slot-label">Current slot</div><div class="sched-slot-time" style="color:var(--text2);">No free slots this week</div>`;
     return;
   }
   const s = schedSlots[schedSlotIndex];
   box.innerHTML = `
     <div class="sched-slot-label">
       <span>Free slot ${schedSlotIndex + 1} of ${schedSlots.length}</span>
-      ${_schedRefreshBtn()}
     </div>
     <div class="sched-slot-time">${s.dayFull} · ${fmtTime12(s.startMins)} – ${fmtTime12(s.endMins)}</div>
     <div class="sched-slot-dur">${fmtDur(s.durMins)} available</div>
@@ -2662,22 +2865,6 @@ function renderSchedSlotBox() {
       <button onclick="schedSkipSlot(-1)" ${schedSlotIndex === 0 ? 'disabled style="opacity:.4;"' : ''}>‹ Prev</button>
       <button onclick="schedSkipSlot(1)" ${schedSlotIndex >= schedSlots.length - 1 ? 'disabled style="opacity:.4;"' : ''}>Skip ›</button>
     </div>`;
-}
-
-// Re-scan free slots from right now to the end of the normal 7-day window.
-// Unlike refreshSchedSlots() (which follows render() and keeps your place), this
-// resets to the first slot, so the one starting now is what you land on.
-function rescanSchedSlots() {
-  ensureTaskFields();
-  schedSlots = computeWeekSlots();
-  schedSlotIndex = 0;
-  schedSelectedTaskId = null;
-  renderSchedPanel();
-  const btn = document.getElementById('sched-refresh-btn');
-  if (btn) { btn.classList.add('spinning'); setTimeout(() => btn.classList.remove('spinning'), 600); }
-  showToast(schedSlots.length
-    ? `${schedSlots.length} free slot${schedSlots.length === 1 ? '' : 's'} found`
-    : 'No free slots in the next 7 days');
 }
 
 function schedSkipSlot(dir) {
@@ -4143,9 +4330,20 @@ const TZ_LIST = [
 let appTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 // Restore saved timezone preference immediately (before auth/render)
 try {
-  const _lsRaw = localStorage.getItem('calapp_v1');
-  if (_lsRaw) { const _lsD = JSON.parse(_lsRaw); if (_lsD.appTimezone) appTimezone = _lsD.appTimezone; }
+  const _tzSaved = localStorage.getItem(TZ_KEY);
+  if (_tzSaved) {
+    appTimezone = _tzSaved;
+  } else {
+    // One-time migration: pull the timezone out of the legacy plaintext cache
+    const _lsRaw = localStorage.getItem(LS_KEY);
+    if (_lsRaw) {
+      const _lsD = JSON.parse(_lsRaw);
+      if (_lsD.appTimezone) { appTimezone = _lsD.appTimezone; localStorage.setItem(TZ_KEY, _lsD.appTimezone); }
+    }
+  }
 } catch(e) {}
+// Legacy plaintext cache is superseded by the encrypted IndexedDB cache — delete it.
+try { localStorage.removeItem(LS_KEY); } catch(e) {}
 
 function openSettings() {
   const overlay = document.getElementById('settings-overlay');
@@ -4226,61 +4424,10 @@ function utcToTzDate(utcDate) {
 
 // Override icsParseDateTime to use appTimezone instead of local
 const _origIcsParseDateTime = icsParseDateTime;
-// Outlook/Exchange export Windows zone names instead of IANA ones.
-const _WIN_TZ = {
-  'Eastern Standard Time':'America/New_York', 'Central Standard Time':'America/Chicago',
-  'Mountain Standard Time':'America/Denver', 'US Mountain Standard Time':'America/Phoenix',
-  'Pacific Standard Time':'America/Los_Angeles', 'Alaskan Standard Time':'America/Anchorage',
-  'Hawaiian Standard Time':'Pacific/Honolulu', 'Atlantic Standard Time':'America/Halifax',
-  'GMT Standard Time':'Europe/London', 'Greenwich Standard Time':'Atlantic/Reykjavik',
-  'W. Europe Standard Time':'Europe/Berlin', 'Romance Standard Time':'Europe/Paris',
-  'Central Europe Standard Time':'Europe/Budapest', 'Central European Standard Time':'Europe/Warsaw',
-  'E. Europe Standard Time':'Europe/Chisinau', 'FLE Standard Time':'Europe/Kiev',
-  'Russian Standard Time':'Europe/Moscow', 'India Standard Time':'Asia/Kolkata',
-  'China Standard Time':'Asia/Shanghai', 'Taipei Standard Time':'Asia/Taipei',
-  'Singapore Standard Time':'Asia/Singapore', 'Tokyo Standard Time':'Asia/Tokyo',
-  'Korea Standard Time':'Asia/Seoul', 'AUS Eastern Standard Time':'Australia/Sydney',
-  'New Zealand Standard Time':'Pacific/Auckland', 'UTC':'UTC', 'Coordinated Universal Time':'UTC'
-};
-// Returns a valid IANA zone for an ICS TZID, or null if it can't be resolved.
-function _icsResolveTz(tzid) {
-  if (!tzid) return null;
-  const cands = [_WIN_TZ[tzid] || tzid];
-  // Some exporters prefix the zone with a path: /mozilla.org/20050126_1/America/New_York
-  const m = tzid.match(/([A-Za-z_]+\/[A-Za-z_\-]+(?:\/[A-Za-z_\-]+)?)$/);
-  if (m) cands.push(m[1]);
-  for (const c of cands) {
-    try { new Intl.DateTimeFormat('en-US', { timeZone: c }); return c; } catch (e) {}
-  }
-  return null;
-}
-// Wall-clock time in zone `tz` → the real instant (Date).
-function _tzWallToUtc(y, mo, d, h, mi, tz) {
-  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23',
-    year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-  const offset = t => {
-    const p = {}; fmt.formatToParts(new Date(t)).forEach(x => { p[x.type] = x.value; });
-    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - t;
-  };
-  const guess = Date.UTC(y, mo, d, h, mi);
-  let t = guess - offset(guess);
-  t = guess - offset(t); // second pass corrects the offset near DST transitions
-  return new Date(t);
-}
-icsParseDateTime = function(v, tzid) {
+icsParseDateTime = function(v) {
   const raw = v.trim();
   if (raw.length < 8) return null;
   const isUTC = raw.endsWith('Z');
-  // TZID-qualified time (Outlook, Apple Calendar): convert from that zone to appTimezone.
-  // Unresolvable TZIDs fall through to floating, as before.
-  const tz = !isUTC && raw.length > 8 ? _icsResolveTz(tzid) : null;
-  if (tz) {
-    const inst = _tzWallToUtc(
-      parseInt(raw.slice(0,4)), parseInt(raw.slice(4,6))-1, parseInt(raw.slice(6,8)),
-      parseInt(raw.slice(9,11)), parseInt(raw.slice(11,13)), tz
-    );
-    return { date: utcToTzDate(inst), time: utcToTzTime(inst) };
-  }
   if (isUTC) {
     const utc = new Date(Date.UTC(
       parseInt(raw.slice(0,4)), parseInt(raw.slice(4,6))-1, parseInt(raw.slice(6,8)),
@@ -5243,8 +5390,12 @@ async function authSubmit() {
     return;
   }
 
+  // Start deriving the local-cache key in parallel with the network sign-in;
+  // the SIGNED_IN handler awaits it before reading the encrypted cache.
+  beginCacheUnlock(password);
   const { data, error } = await _supa.auth.signInWithPassword({ email, password });
   if (error) {
+    lockCache();
     err.textContent = error.message;
     btn.textContent = origText; btn.disabled = false;
     return;
@@ -5265,6 +5416,12 @@ async function authForgot() {
 }
 
 async function authSignOut() {
+  if (_outbox.length) {
+    const n = _outbox.length;
+    if (!confirm(`${n} change${n === 1 ? '' : 's'} haven't synced yet. They'll sync the next time you sign in on this device. Sign out anyway?`)) return;
+  }
+  await _flushLocalWrites(); // make sure the encrypted cache/outbox are on disk
+  lockCache(); // drop the key first so nothing below gets written to the cache
   await _supa.auth.signOut();
   _supaUser = null;
   calendars = [{id:1,name:'Personal',color:'#4A90D9',visible:true},{id:2,name:'Work',color:'#E05C5C',visible:true}];
@@ -5291,9 +5448,12 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       if (appEl) { appEl.classList.add('authenticated'); appEl.style.visibility = ''; appEl.style.opacity = ''; }
       if (mnav) mnav.style.display = '';
 
-      // Show cached data from localStorage immediately for instant first paint
-      const hasCached = loadFromStorage();
+      // Show cached data (encrypted IndexedDB) immediately for instant first paint
+      const hasCached = await loadFromStorage();
       if (hasCached) { render(); renderSidebar(); renderTasks(); }
+      // Load the encrypted queues before anything can append to them
+      await _loadUnsavedQueue();   // legacy (pre-outbox) failed-task queue
+      await _loadOutbox();
 
       // Show a subtle loading indicator while fetching fresh data
       const loadBanner = document.createElement('div');
@@ -5302,8 +5462,15 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       document.head.insertAdjacentHTML('beforeend', '<style>@keyframes loadbar{0%{background-position:100% 0}100%{background-position:-100% 0}}</style>');
       document.body.appendChild(loadBanner);
 
-      await loadFromSupabase();
+      // Push this device's pending changes first, then pull the server copy.
+      // If anything is still pending (offline / server down) keep the local copy.
+      await _flushOutbox();
+      const fresh = await loadFromSupabase();
       loadBanner.remove();
+      if (!fresh && hasCached) {
+        showToast(_outbox.length ? 'Some changes haven\'t synced yet — showing this device\'s copy'
+                                 : 'Couldn\'t reach the server — showing saved copy', true);
+      }
       render(); renderSidebar(); renderTasks();
       requestNotificationPermission().then(scheduleEventNotifications);
       await _flushUnsavedQueue();
@@ -5354,7 +5521,9 @@ async function loadFromSupabase() {
     const pageSize = 1000;
     while (true) {
       const { data, error } = await _supa.from(table).select('*').eq('user_id', uid).order(orderCol).range(from, from + pageSize - 1);
-      if (error) { console.error(`fetchAllRows(${table}) error:`, error.message); break; }
+      // Throw rather than return a partial/empty list — an empty result here used to
+      // look like "first login" and trigger default-calendar creation.
+      if (error) throw new Error(`fetchAllRows(${table}): ${error.message}`);
       if (!data || data.length === 0) break;
       all = all.concat(data);
       if (data.length < pageSize) break; // last page
@@ -5363,12 +5532,20 @@ async function loadFromSupabase() {
     return all;
   }
 
-  const [calsData, eventsData, tasksData, groupsData] = await Promise.all([
-    fetchAllRows('calendars', uid, 'created_at'),
-    fetchAllRows('events', uid, 'date'),
-    fetchAllRows('tasks', uid, 'created_at'),
-    fetchAllRows('groups', uid, 'created_at'),
-  ]);
+  let calsData, eventsData, tasksData, groupsData;
+  try {
+    [calsData, eventsData, tasksData, groupsData] = await Promise.all([
+      fetchAllRows('calendars', uid, 'created_at'),
+      fetchAllRows('events', uid, 'date'),
+      fetchAllRows('tasks', uid, 'created_at'),
+      fetchAllRows('groups', uid, 'created_at'),
+    ]);
+  } catch (e) {
+    console.warn('loadFromSupabase failed — keeping local copy:', e.message);
+    return false;
+  }
+  // Unsynced local changes are newer than what the server has — don't overwrite them.
+  if (_outbox.length) return false;
   const calsRes = { data: calsData };
   const eventsRes = { data: eventsData };
   const tasksRes = { data: tasksData };
@@ -5471,6 +5648,7 @@ async function loadFromSupabase() {
   }
 
   groups = (groupsRes.data || []).map(g => ({ id: g.id, name: g.name, _dbId: g.id }));
+  return true;
 }
 
 // ── Event notifications ──────────────────────────────────────────────────────
@@ -5567,7 +5745,10 @@ function scheduleEventNotifications() {
 
 async function dbSaveEvent(ev) {
   if (!_supaUser) { saveToStorage(); return true; }
+  if (!ev._dbId) ev._dbId = _newId(); // client UUID → upsert is idempotent
   const row = {
+    id: ev._dbId,
+    updated_at: new Date().toISOString(),
     user_id: _supaUser.id,
     cal_id: ev.calId,
     title: ev.title || '',
@@ -5584,31 +5765,17 @@ async function dbSaveEvent(ev) {
     gcal_event_id: ev._gcalEventId || null,
     gcal_calendar_id: ev._gcalCalendarId || null,
   };
-  if (ev._dbId) {
-    const { error } = await _supa.from('events').update(row).eq('id', ev._dbId);
-    if (error) { console.error('dbSaveEvent update error:', error.message, row); return false; }
-    return true;
-  } else {
-    const { data, error } = await _supa.from('events').insert(row).select().single();
-    if (error) { console.error('dbSaveEvent insert error:', error.message, row); return false; }
-    if (data) ev._dbId = data.id;
-    return true;
-  }
+  // true = on the server or safely queued on this device; false = server refused it
+  return (await _submit('events', 'upsert', ev._dbId, row)) !== 'rejected';
 }
 
-// Save many events without flooding the connection pool. Sequential batches of
-// BATCH, all awaited. Returns the events that failed so the caller can report.
-async function dbSaveEventsBatched(list, BATCH = 20) {
+// Save many events. They all land in the outbox at once and are sent as
+// batched upserts (OUTBOX_BATCH rows per request). Returns the events the
+// server refused so the caller can report. (BATCH kept for call compatibility.)
+async function dbSaveEventsBatched(list, BATCH) {
   if (!_supaUser) { saveToStorage(); return []; }
-  const failed = [];
-  for (let i = 0; i < list.length; i += BATCH) {
-    const chunk = list.slice(i, i + BATCH);
-    const res = await Promise.allSettled(chunk.map(e => dbSaveEvent(e)));
-    res.forEach((r, j) => {
-      if (r.status === 'rejected' || r.value === false) failed.push(chunk[j]);
-    });
-  }
-  return failed;
+  const ok = await Promise.all(list.map(e => dbSaveEvent(e)));
+  return list.filter((e, i) => !ok[i]);
 }
 
 async function dbDeleteEvent(ev) {
@@ -5625,31 +5792,36 @@ async function dbDeleteEvent(ev) {
     if (error) console.error('dbDeleteEvent fallback error:', error.message);
     return;
   }
-  const { error } = await _supa.from('events').delete().eq('id', ev._dbId);
-  if (error) console.error('dbDeleteEvent error:', error.message, ev._dbId);
+  await _submit('events', 'delete', ev._dbId);
 }
 
 async function dbSaveCalendar(cal) {
   if (!_supaUser) { saveToStorage(); return; }
-  const row = { user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible, gcal_id: cal._gcalId || null, gcal_email: cal._gcalEmail || null };
-  if (cal._dbId) {
-    const { error } = await _supa.from('calendars').update(row).eq('id', cal._dbId);
-    if (error) console.error('dbSaveCalendar update error:', error.message, row);
-  } else {
-    const { data, error } = await _supa.from('calendars').insert(row).select().single();
-    if (error) { console.error('dbSaveCalendar insert error:', error.message, row); return; }
-    if (data) { cal._dbId = data.id; cal.id = data.id; }
+  if (!cal._dbId) {
+    // New calendar: give it its permanent UUID now, and repoint any events
+    const oldId = cal.id;
+    cal._dbId = cal.id = _newId();
+    events.forEach(e => { if (e.calId == oldId) e.calId = cal.id; });
   }
+  const row = { id: cal._dbId, updated_at: new Date().toISOString(), user_id: _supaUser.id, name: cal.name, color: cal.color, visible: cal.visible, gcal_id: cal._gcalId || null, gcal_email: cal._gcalEmail || null };
+  await _submit('calendars', 'upsert', cal._dbId, row);
 }
 
 async function dbDeleteCalendar(cal) {
   if (!_supaUser || !cal._dbId) return;
-  await _supa.from('calendars').delete().eq('id', cal._dbId);
+  await _submit('calendars', 'delete', cal._dbId);
 }
 
 async function dbSaveTask(task) {
   if (!_supaUser) { saveToStorage(); return; }
+  if (!task._dbId) {
+    const oldId = task.id;
+    task._dbId = task.id = _newId();
+    if (timerTaskId != null && timerTaskId == oldId) timerTaskId = task.id; // keep a running timer attached
+  }
   const row = {
+    id: task._dbId,
+    updated_at: new Date().toISOString(),
     user_id: _supaUser.id,
     title: task.title,
     notes: task.notes || '',
@@ -5661,44 +5833,54 @@ async function dbSaveTask(task) {
     done: task.done || false,
     scheduled: task.scheduled || false,
   };
-  try {
-    if (task._dbId) {
-      const { error } = await _supa.from('tasks').update(row).eq('id', task._dbId);
-      if (error) { console.error('dbSaveTask UPDATE error:', error.message); _queueUnsavedTask(task); showToast('Save failed — will retry on next sign-in', true); }
-    } else {
-      const { data, error } = await _supa.from('tasks').insert(row).select().single();
-      if (error) { console.error('dbSaveTask INSERT error:', error.message); _queueUnsavedTask(task); showToast('Save failed — will retry on next sign-in', true); return; }
-      if (data) { task._dbId = data.id; task.id = data.id; }
-    }
-  } catch (e) {
-    console.error('dbSaveTask exception:', e);
-    _queueUnsavedTask(task);
-    showToast('Save failed — will retry on next sign-in', true);
+  // Offline/failed writes stay in the outbox and retry automatically;
+  // a server rejection is reported by _drainOutbox().
+  await _submit('tasks', 'upsert', task._dbId, row);
+}
+
+// ── LEGACY unsaved task queue — superseded by the outbox. Drained into it on
+// sign-in (via dbSaveTask); nothing new is added. Safe to remove later.
+// Stored encrypted in IndexedDB (QUEUE_ID); _unsavedQ is the in-memory mirror.
+const LEGACY_Q_KEY = 'daycal_unsaved_q'; // old plaintext queue — migrated on sign-in
+const _sameQueued = (a, b) => a.title === b.title && a.due === b.due;
+
+function _persistUnsavedQueue() {
+  if (!_cacheKey || !_currentUid()) return Promise.resolve(false);
+  const payload = JSON.stringify({ uid: _currentUid(), q: _unsavedQ });
+  return _queueWrite(() => _encPut(QUEUE_ID, payload));
+}
+
+async function _loadUnsavedQueue() {
+  const stored = await _encGet(QUEUE_ID);
+  const fromDisk = (stored && Array.isArray(stored.q) && (!stored.uid || stored.uid === _currentUid()))
+    ? stored.q : [];
+  const merged = fromDisk.slice();
+  // Keep anything queued this session before the load finished
+  _unsavedQ.forEach(t => { if (!merged.find(x => _sameQueued(x, t))) merged.push(t); });
+  // One-time migration of the old plaintext queue
+  let legacy = [];
+  try { legacy = JSON.parse(localStorage.getItem(LEGACY_Q_KEY) || '[]'); } catch(e) {}
+  legacy.forEach(t => { if (!merged.find(x => _sameQueued(x, t))) merged.push(t); });
+  _unsavedQ = merged;
+  if (legacy.length) {
+    // Only delete the plaintext copy once the encrypted copy is safely written
+    if (await _persistUnsavedQueue()) { try { localStorage.removeItem(LEGACY_Q_KEY); } catch(e) {} }
   }
 }
 
-// ── Unsaved task queue — survives page reloads ──────────────────────────────
-function _queueUnsavedTask(task) {
-  try {
-    const q = JSON.parse(localStorage.getItem('daycal_unsaved_q') || '[]');
-    // Avoid duplicates by title + due
-    if (!q.find(t => t.title === task.title && t.due === task.due)) {
-      q.push({ ...task, _queuedAt: Date.now() });
-      localStorage.setItem('daycal_unsaved_q', JSON.stringify(q));
-    }
-  } catch(e) {}
-}
 
 async function _flushUnsavedQueue() {
   if (!_supaUser) return;
   try {
-    const q = JSON.parse(localStorage.getItem('daycal_unsaved_q') || '[]');
+    const q = _unsavedQ.slice();
     if (!q.length) return;
-    localStorage.removeItem('daycal_unsaved_q');
+    // Clear, then retry each; failures re-queue themselves via dbSaveTask()
+    _unsavedQ = [];
+    await _persistUnsavedQueue();
     let recovered = 0;
     for (const task of q) {
       delete task._queuedAt;
-      // Do NOT force a fresh insert. _queueUnsavedTask() also queues UPDATE
+      // Do NOT force a fresh insert. The old queue also held UPDATE
       // failures, so blindly inserting created a second row for a task that
       // already existed in Supabase — and the new copy came back with
       // scheduled:false, so it reappeared as schedulable. Keeping _dbId means
@@ -5745,24 +5927,23 @@ function showToast(msg, warn = false) {
 
 async function dbDeleteTask(task) {
   if (!_supaUser || !task._dbId) return;
-  const { error } = await _supa.from('tasks').delete().eq('id', task._dbId);
-  if (error) console.error('dbDeleteTask error:', error.message);
+  await _submit('tasks', 'delete', task._dbId);
 }
 
 async function dbSaveGroup(group) {
   if (!_supaUser) { saveToStorage(); return; }
-  const row = { user_id: _supaUser.id, name: group.name };
-  if (group._dbId) {
-    await _supa.from('groups').update(row).eq('id', group._dbId);
-  } else {
-    const { data } = await _supa.from('groups').insert(row).select().single();
-    if (data) { group._dbId = data.id; group.id = data.id; }
+  if (!group._dbId) {
+    const oldId = group.id;
+    group._dbId = group.id = _newId();
+    tasks.forEach(t => { if (t.groupId != null && t.groupId == oldId) t.groupId = group.id; });
   }
+  const row = { id: group._dbId, updated_at: new Date().toISOString(), user_id: _supaUser.id, name: group.name };
+  await _submit('groups', 'upsert', group._dbId, row);
 }
 
 async function dbDeleteGroup(group) {
   if (!_supaUser || !group._dbId) return;
-  await _supa.from('groups').delete().eq('id', group._dbId);
+  await _submit('groups', 'delete', group._dbId);
 }
 
 // saveNewEvPopover saves to Supabase directly (async)
@@ -5791,20 +5972,19 @@ async function dbDeleteGroup(group) {
       ];
       const today = new Date();
       const y = today.getFullYear(), m = today.getMonth(), d = today.getDate();
-      const _pd = n => { const x = new Date(y, m, d + n); return dateStr(x.getFullYear(), x.getMonth(), x.getDate()); };
       events = [
-        { id: 'ev-1', title: 'Team standup',  calId: 'cal-2', date: _pd(0), startTime: '09:00', endTime: '09:30', allDay: false },
-        { id: 'ev-2', title: 'Gym',           calId: 'cal-3', date: _pd(0), startTime: '07:00', endTime: '08:00', allDay: false },
-        { id: 'ev-3', title: 'Lunch',         calId: 'cal-1', date: _pd(0), startTime: '12:30', endTime: '13:30', allDay: false },
-        { id: 'ev-4', title: 'Deep work',     calId: 'cal-2', date: _pd(1), startTime: '10:00', endTime: '12:00', allDay: false },
-        { id: 'ev-5', title: 'Review sprint', calId: 'cal-2', date: _pd(2), startTime: '15:00', endTime: '16:00', allDay: false },
+        { id: 'ev-1', title: 'Team standup',  calendar_id: 'cal-2', start: new Date(y,m,d,9,0).toISOString(),    end: new Date(y,m,d,9,30).toISOString(),  allDay: false, user_id: 'preview-user' },
+        { id: 'ev-2', title: 'Gym',           calendar_id: 'cal-3', start: new Date(y,m,d,7,0).toISOString(),    end: new Date(y,m,d,8,0).toISOString(),   allDay: false, user_id: 'preview-user' },
+        { id: 'ev-3', title: 'Lunch',         calendar_id: 'cal-1', start: new Date(y,m,d,12,30).toISOString(),  end: new Date(y,m,d,13,30).toISOString(), allDay: false, user_id: 'preview-user' },
+        { id: 'ev-4', title: 'Deep work',     calendar_id: 'cal-2', start: new Date(y,m,d+1,10,0).toISOString(), end: new Date(y,m,d+1,12,0).toISOString(),allDay: false, user_id: 'preview-user' },
+        { id: 'ev-5', title: 'Review sprint', calendar_id: 'cal-2', start: new Date(y,m,d+2,15,0).toISOString(), end: new Date(y,m,d+2,16,0).toISOString(),allDay: false, user_id: 'preview-user' },
       ];
       groups = [{ id: 'grp-1', name: 'College Admissions', user_id: 'preview-user' }];
       tasks = [
-        { id: 'tsk-1', title: 'Finish personal statement', notes: '', due: '', dueTime: '', groupId: 'grp-1', priority: 'high',   estMins: 90, timeLeftMins: 90, done: false, scheduled: false },
-        { id: 'tsk-2', title: 'PIQ Questions',             notes: '', due: '', dueTime: '', groupId: 'grp-1', priority: 'medium', estMins: 50, timeLeftMins: 50, done: false, scheduled: false },
-        { id: 'tsk-3', title: 'Match prep notes',          notes: '', due: '', dueTime: '', groupId: null,    priority: 'low',    estMins: 30, timeLeftMins: 30, done: false, scheduled: false },
-        { id: 'tsk-4', title: 'Read chapter 5',            notes: '', due: '', dueTime: '', groupId: null,    priority: 'medium', estMins: 45, timeLeftMins: 45, done: false, scheduled: false },
+        { id: 'tsk-1', title: 'Finish personal statement', group_id: 'grp-1', priority: 'high',   estMins: 90, done: false, user_id: 'preview-user' },
+        { id: 'tsk-2', title: 'PIQ Questions',             group_id: 'grp-1', priority: 'medium', estMins: 50, done: false, user_id: 'preview-user' },
+        { id: 'tsk-3', title: 'Match prep notes',          group_id: null,    priority: 'low',    estMins: 30, done: false, user_id: 'preview-user' },
+        { id: 'tsk-4', title: 'Read chapter 5',            group_id: null,    priority: 'medium', estMins: 45, done: false, user_id: 'preview-user' },
       ];
     } catch(e) { console.error('preview seed error', e); }
 
@@ -6092,85 +6272,6 @@ function _showSyncOptions(prevSynced) {
   };
 }
 
-// ── Google access-token cache ──
-// GIS implicit-flow tokens last ~1h. Without caching, every re-sync asked for a new
-// one, which is what made syncing so fragile: the request happens several awaits
-// after the click, so the browser blocks the popup and the whole sync dies silently.
-// Cached in sessionStorage, so it's gone when the tab closes — sign-in is still
-// required on every page load.
-let _gcalTokenCache = {};
-try { _gcalTokenCache = JSON.parse(sessionStorage.getItem('daycal_gcal_tokens') || '{}') || {}; } catch(e) {}
-function _saveGcalTokenCache(){ try { sessionStorage.setItem('daycal_gcal_tokens', JSON.stringify(_gcalTokenCache)); } catch(e) {} }
-function cacheGcalToken(email, tokenResponse){
-  if (!email || !tokenResponse || !tokenResponse.access_token) return;
-  _gcalTokenCache[email] = { token: tokenResponse.access_token, exp: Date.now() + ((+tokenResponse.expires_in || 3600) * 1000) };
-  _saveGcalTokenCache();
-}
-function getCachedGcalToken(email){
-  const t = _gcalTokenCache[email];
-  return (t && t.token && t.exp - Date.now() > 120000) ? t.token : null; // 2 min of headroom
-}
-function clearCachedGcalToken(email){ delete _gcalTokenCache[email]; _saveGcalTokenCache(); }
-
-// Returns an access token for `email`, or null. Uses the cache first, so a re-sync
-// within the hour needs no popup at all. Never hangs: COOP can stop GIS noticing a
-// popup the user closed, so popup_closed may never fire — hence the timeout.
-function acquireGcalToken(email, setText, onNeedsRetry){
-  const cached = getCachedGcalToken(email);
-  if (cached) return Promise.resolve(cached);
-  return new Promise(resolve => {
-    let done = false;
-    const finish = v => { if (!done) { done = true; clearTimeout(timer); resolve(v); } };
-    const timer = setTimeout(() => {
-      setText(`${email} didn't respond — press Retry`);
-      if (onNeedsRetry) onNeedsRetry();
-      finish(null);
-    }, 90000);
-    try {
-      const tc = google.accounts.oauth2.initTokenClient({
-        client_id: GCAL_CLIENT_ID,
-        scope: GCAL_SCOPES,
-        hint: email,
-        error_callback: (err) => {
-          const blocked = err && (err.type === 'popup_failed_to_open' || err.type === 'popup_closed');
-          setText(blocked ? `Popup blocked for ${email} — allow popups, then press Retry`
-                          : `Couldn't connect to ${email}`);
-          if (onNeedsRetry) onNeedsRetry();
-          finish(null);
-        },
-        callback: (tokenResponse) => {
-          if (!tokenResponse || tokenResponse.error) {
-            setText('Auth failed — ' + ((tokenResponse && tokenResponse.error) || 'unknown'));
-            if (onNeedsRetry) onNeedsRetry();
-            return finish(null);
-          }
-          cacheGcalToken(email, tokenResponse);
-          finish(tokenResponse.access_token);
-        }
-      });
-      tc.requestAccessToken({ prompt: '' }); // silent when the grant is still valid
-    } catch(e) {
-      console.warn('Token request failed', email, e);
-      setText(`Couldn't connect to ${email}`);
-      if (onNeedsRetry) onNeedsRetry();
-      finish(null);
-    }
-  });
-}
-
-// Re-running from a button click gives Google a fresh user gesture, which is the
-// only reliable way past a popup blocker.
-function _showResyncRetry(prevSynced) {
-  const box = document.getElementById('gcal-resync-progress');
-  if (!box || document.getElementById('gcal-resync-retry')) return;
-  const btn = document.createElement('button');
-  btn.id = 'gcal-resync-retry';
-  btn.textContent = 'Retry';
-  btn.style.cssText = 'margin-left:10px;padding:3px 10px;border-radius:6px;border:.5px solid var(--accent);background:var(--bg);color:var(--accent-text);font-size:12px;cursor:pointer;';
-  btn.onclick = () => { box.remove(); _resyncExistingGcals(prevSynced); };
-  box.appendChild(btn);
-}
-
 async function _resyncExistingGcals(prevSynced) {
   // Group by email so we only need one OAuth token per account
   const byEmail = {};
@@ -6180,57 +6281,41 @@ async function _resyncExistingGcals(prevSynced) {
   });
 
   const progress = document.createElement('div');
-  progress.id = 'gcal-resync-progress';
-  progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);display:flex;align-items:center;';
+  progress.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg);border:.5px solid var(--border);border-radius:8px;padding:10px 20px;font-size:13px;color:var(--text);z-index:1000;box-shadow:var(--sh);';
   progress.innerHTML = '<span id="gcal-resync-text">Connecting to Google…</span>';
   document.body.appendChild(progress);
 
   for (const [email, cals] of Object.entries(byEmail)) {
     const setText = t => { const el = document.getElementById('gcal-resync-text'); if (el) el.textContent = t; };
 
-    // Cached token when there is one, so the usual re-sync opens no popup at all.
-    const _token = await acquireGcalToken(email, setText, () => _showResyncRetry(prevSynced));
-    if (!_token) continue; // message + Retry already shown; try the next account
-    _gcalToken = _token;
-    _gcalUserEmail = email;
+    // Get a fresh token (silent if possible, otherwise prompt)
+    await new Promise(resolve => {
+      const tc = google.accounts.oauth2.initTokenClient({
+        client_id: GCAL_CLIENT_ID,
+        scope: GCAL_SCOPES,
+        hint: email,
+        callback: async (tokenResponse) => {
+          if (tokenResponse.error) { setText('Auth failed — ' + tokenResponse.error); setTimeout(resolve, 1500); return; }
+          _gcalToken = tokenResponse.access_token;
+          _gcalUserEmail = email;
 
-    {
           const now = new Date();
-          const _winStart = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
-          const _winEnd = new Date(now.getFullYear() + 2, now.getMonth(), now.getDate());
-          const timeMin = _winStart.toISOString();
-          const timeMax = _winEnd.toISOString();
-          const winStartDs = dateStr(_winStart.getFullYear(), _winStart.getMonth(), _winStart.getDate());
-          const winEndDs = dateStr(_winEnd.getFullYear(), _winEnd.getMonth(), _winEnd.getDate());
-          let newCount = 0, goneCount = 0;
+          const timeMin = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate()).toISOString();
+          const timeMax = new Date(now.getFullYear() + 2, now.getMonth(), now.getDate()).toISOString();
+          let newCount = 0;
 
           for (const appCal of cals) {
             setText(`Checking ${appCal.name}…`);
             try {
-              // An event deleted in Google is NOT returned as status:'cancelled' here —
-              // with singleEvents=true and no syncToken it just stops appearing. The
-              // cancelled branch below therefore almost never fires, and deleted events
-              // lived on in Supabase forever. Track what Google actually returned and
-              // prune the rest, but only if every page came back clean (see pagesOk).
-              const seen = new Set();
-              let pagesOk = true, sawAnyPage = false;
               let pageToken = null;
               do {
                 let url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(appCal._gcalId)}/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=2500`;
                 if (pageToken) url += `&pageToken=${encodeURIComponent(pageToken)}`;
                 const res = await fetch(url, { headers: { Authorization: 'Bearer ' + _gcalToken } });
-                if (res.status === 401 || res.status === 403) {
-                  clearCachedGcalToken(email);
-                  setText(`${email} needs re-authorising — press Retry`);
-                  _showResyncRetry(prevSynced);
-                  pagesOk = false; break;
-                }
                 const data = await res.json();
-                if (data.error || !data.items) { pagesOk = false; break; }
-                sawAnyPage = true;
+                if (data.error || !data.items) break;
 
                 for (const item of data.items) {
-                  if (item.id) seen.add(item.id);
                   if (item.status === 'cancelled') {
                     // Remove cancelled events
                     const idx = events.findIndex(e => e._gcalEventId === item.id);
@@ -6266,31 +6351,15 @@ async function _resyncExistingGcals(prevSynced) {
                 }
                 pageToken = data.nextPageToken || null;
               } while (pageToken);
-
-              // Prune events Google no longer has. Skipped entirely if any page failed,
-              // so a dropped request can never wipe a calendar.
-              if (pagesOk && sawAnyPage) {
-                const stale = events.filter(e => e._gcalEventId && e.calId == appCal.id
-                  && !seen.has(e._gcalEventId)
-                  && e.date >= winStartDs && e.date <= winEndDs);
-                for (const ev of stale) {
-                  await dbDeleteEvent(ev);
-                  const i = events.indexOf(ev);
-                  if (i >= 0) events.splice(i, 1);
-                  goneCount++;
-                }
-              }
             } catch(e) { console.warn('Re-sync error', appCal.name, e); }
           }
-          const _parts = [];
-          if (newCount) _parts.push(`${newCount} new`);
-          if (goneCount) _parts.push(`${goneCount} removed`);
-          setText(_parts.length ? `Done — ${_parts.join(', ')}` : 'Up to date — no changes');
-          setTimeout(() => {
-            if (!document.getElementById('gcal-resync-retry')) progress.remove();
-            render(); renderSidebar(); scheduleEventNotifications();
-          }, 2000);
-    }
+          setText(newCount > 0 ? `Done — ${newCount} new event${newCount>1?'s':''} added` : 'Up to date — no new events');
+          setTimeout(() => { progress.remove(); render(); renderSidebar(); scheduleEventNotifications(); }, 2000);
+          resolve();
+        }
+      });
+      tc.requestAccessToken({ prompt: '' }); // no prompt = silent if possible
+    });
   }
 }
 
@@ -6299,12 +6368,6 @@ function _startFullGcalSync() {
   const tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GCAL_CLIENT_ID,
     scope: GCAL_SCOPES,
-    error_callback: (err) => {
-      const blocked = err && (err.type === 'popup_failed_to_open' || err.type === 'popup_closed');
-      showToast(blocked
-        ? 'Google popup was blocked — allow popups for this site and try again'
-        : 'Google sign-in was cancelled');
-    },
     callback: async (tokenResponse) => {
       if (tokenResponse.error) {
         alert('Google sign-in failed: ' + tokenResponse.error);
@@ -6318,9 +6381,6 @@ function _startFullGcalSync() {
         });
         const userInfo = await userRes.json();
         _gcalUserEmail = userInfo.email || 'Google Calendar';
-        // Cache under the real address, so a re-sync in the same tab needs no popup.
-        // Must come after the userinfo call — before it, _gcalUserEmail is still stale.
-        if (userInfo.email) cacheGcalToken(userInfo.email, tokenResponse);
       } catch(e) { _gcalUserEmail = 'Google Calendar'; }
       await fetchGoogleCalendars();
     }
