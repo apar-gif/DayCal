@@ -5424,14 +5424,22 @@ async function authSubmit() {
   // Start deriving the local-cache key in parallel with the network sign-in;
   // the SIGNED_IN handler awaits it before reading the encrypted cache.
   beginCacheUnlock(password);
+  // Offline: skip Supabase entirely and unlock this device's encrypted copy.
+  if (!navigator.onLine && await _hasLocalCache()) {
+    btn.textContent = origText; btn.disabled = false;
+    await authOfflineUnlock();
+    return;
+  }
+  // supabase-js retries failed network requests internally and can hang for a
+  // long time, so cap how long we wait before falling back.
   let data, error;
   try {
-    ({ data, error } = await _supa.auth.signInWithPassword({ email, password }));
+    const timeout = new Promise(res => setTimeout(() => res({ error: { message: 'Failed to fetch' } }), 8000));
+    ({ data, error } = await Promise.race([_supa.auth.signInWithPassword({ email, password }), timeout]));
   } catch (e) { error = { message: 'Failed to fetch' }; }
-  // No connection? Fall back to unlocking this device's encrypted copy.
-  if (error && (!navigator.onLine || /fetch|network/i.test(error.message || '')) && await _hasLocalCache()) {
+  if (error && /fetch|network|timeout/i.test(error.message || '') && await _hasLocalCache()) {
     btn.textContent = origText; btn.disabled = false;
-    if (await authOfflineUnlock()) return;
+    await authOfflineUnlock();
     return;
   }
   if (error) {
@@ -5542,9 +5550,9 @@ async function refreshAuthOfflineUI() {
   const btn = document.getElementById('auth-offline-btn');
   const sub = document.getElementById('auth-sub');
   if (!btn) return;
-  const available = !navigator.onLine && await _hasLocalCache();
-  btn.style.display = available ? 'block' : 'none';
-  if (available && sub) sub.textContent = 'You\'re offline — unlock with your password';
+  const cached = await _hasLocalCache();
+  btn.style.setProperty('display', cached ? 'block' : 'none', 'important');
+  if (!navigator.onLine && cached && sub) sub.textContent = 'You\'re offline — unlock with your password';
 }
 window.addEventListener('offline', refreshAuthOfflineUI);
 window.addEventListener('online', refreshAuthOfflineUI);
