@@ -7,6 +7,8 @@
 <meta http-equiv="Expires" content="0"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>"/>
 <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#4361ee"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
@@ -6199,6 +6201,24 @@ async function dbDeleteGroup(group) {
   showSignIn();
 })();
 
+
+// ── Service worker (Phase 4) — lets the app load with no connection ─────────
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const incoming = reg.installing;
+        if (!incoming) return;
+        incoming.addEventListener('statechange', () => {
+          // controller present = this isn't the first install, so it's an update
+          if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
+            showToast('Update downloaded — reload to use the new version');
+          }
+        });
+      });
+    }).catch(e => console.warn('Service worker registration failed:', e));
+  });
+}
 
 // apple-touch-icon served as static file
 
