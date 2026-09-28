@@ -1455,9 +1455,11 @@ async function loadFromStorage() {
     if (!d) return false;
     if (d.uid && d.uid !== _currentUid()) return false; // another account's cache
     // (Timezone is restored separately from TZ_KEY at startup.)
-    if (d.calendars && d.calendars.length)  calendars = d.calendars.map(c => ({ ...c, id: parseInt(c.id) || c.id }));
+    // NB: parseInt() must never touch a UUID — parseInt('19e3474f-…') is 19.
+    const _keepId = v => _isUuid(v) ? v : (parseInt(v) || v);
+    if (d.calendars && d.calendars.length)  calendars = d.calendars.map(c => ({ ...c, id: _keepId(c.id) }));
     if (d.events) {
-      events = d.events.map(e => ({ ...e, calId: parseInt(e.calId) || e.calId }));
+      events = d.events.map(e => ({ ...e, calId: _keepId(e.calId) }));
     }
     if (d.tasks)                             tasks        = d.tasks;
     if (d.taskNextId)                        taskNextId   = d.taskNextId;
@@ -1465,27 +1467,31 @@ async function loadFromStorage() {
     if (d.groupNextId)                       groupNextId  = d.groupNextId;
     if (d.appTimezone)                       { try { appTimezone = d.appTimezone; } catch(e){} }
 
-    // ── REPAIR: reassign guaranteed-unique sequential IDs to calendars,
-    // and remap every event's calId to match (by old id, fixing duplicates) ──
-    const idMap = {}; // oldId(string) -> newId(number), only first occurrence kept as primary
-    const seenOld = new Set();
-    let newId = 1;
-    calendars = calendars.map(c => {
-      const oldId = String(c.id);
-      const assigned = newId++;
-      if (!seenOld.has(oldId)) {
-        idMap[oldId] = assigned; // first calendar with this old id wins the mapping
-        seenOld.add(oldId);
-      }
-      return { ...c, id: assigned, _oldId: oldId };
-    });
-    // Remap events: use idMap from their original calId
-    events = events.map(e => {
-      const oldId = String(e.calId);
-      const mapped = idMap[oldId];
-      return { ...e, calId: mapped != null ? mapped : (calendars[0] ? calendars[0].id : 1) };
-    });
-    nextId = newId;
+    // ── REPAIR (legacy caches only): reassign sequential IDs to calendars and
+    // remap events to match. Server UUIDs must survive untouched — renumbering
+    // them breaks every write (cal_id is a uuid column) and, offline, leaves
+    // scheduled blocks unattached to any calendar so slots look free.
+    if (calendars.some(c => !_isUuid(c.id))) {
+      const idMap = {}; // oldId(string) -> newId(number), only first occurrence kept as primary
+      const seenOld = new Set();
+      let newId = 1;
+      calendars = calendars.map(c => {
+        const oldId = String(c.id);
+        const assigned = newId++;
+        if (!seenOld.has(oldId)) {
+          idMap[oldId] = assigned; // first calendar with this old id wins the mapping
+          seenOld.add(oldId);
+        }
+        return { ...c, id: assigned, _oldId: oldId };
+      });
+      // Remap events: use idMap from their original calId
+      events = events.map(e => {
+        const oldId = String(e.calId);
+        const mapped = idMap[oldId];
+        return { ...e, calId: mapped != null ? mapped : (calendars[0] ? calendars[0].id : 1) };
+      });
+      nextId = newId;
+    }
 
     // ── REPAIR: backfill missing fields on events so older saved data
     // doesn't break newer features (location, meet, recurrence, scheduling) ──
@@ -5877,7 +5883,11 @@ async function dbSaveEvent(ev) {
   if (!_isUuid(ev.calId)) {
     const own = calendars.find(c => c.id == ev.calId);
     if (own && !own._dbId) await dbSaveCalendar(own);        // gives it a UUID, repoints its events
-    else ev.calId = (calendars.find(c => _isUuid(c.id)) || {}).id;
+    else if (own && _isUuid(own._dbId)) ev.calId = own._dbId; // cached calendar that kept its server id
+    else {
+      const anyReal = calendars.find(c => _isUuid(c.id));
+      if (anyReal) ev.calId = anyReal.id;                     // leave calId alone if there's nothing better
+    }
     if (!_isUuid(ev.calId)) { console.error('dbSaveEvent: no valid calendar for', ev.title, ev.date); return false; }
   }
   const row = {
