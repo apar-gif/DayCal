@@ -4966,7 +4966,7 @@ async function _showScheduledTimerPending(task, slotStartMins, msUntilStart, tas
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(`Starting now: ${task.title}`, {
         body: `Your ${formatEst(taskMins)} block is beginning.`,
-        icon: '/DayCal/apple-touch-icon.png',
+        icon: 'apple-touch-icon.png',
         tag: 'timer-start-' + String(task.id),
         requireInteraction: true,
       });
@@ -5903,7 +5903,7 @@ function scheduleEventNotifications() {
     if (msUntil < 0 || msUntil > 24 * 60 * 60 * 1000) return;
     const cal = calendars.find(c => c.id == ev.calId);
     const body = ev.startTime + (cal ? ' · ' + cal.name : '');
-    const icon = '/DayCal/apple-touch-icon.png';
+    const icon = 'apple-touch-icon.png';
     const t30 = msUntil - 30 * 60 * 1000;
     if (t30 > 0) _notifTimers.push(setTimeout(() => {
       new Notification(ev.title + ' in 30 minutes', { body, icon, tag: String(ev.id)+'-30min' });
