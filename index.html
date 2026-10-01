@@ -1249,6 +1249,7 @@ let _outboxPersistP = Promise.resolve(true), _outboxPersistQueued = false;
 // Supabase session. Writes still queue in the outbox; they sync at the next
 // online sign-in. Nothing is sent to the server in this mode (there's no JWT).
 let _offlineMode = false;
+let _needsSignIn = false;   // online, but the queue needs a real session to flush
 async function _hasLocalCache() {
   try { const rec = await _idbGet(CACHE_ID); return !!(rec && rec.ct); } catch(e) { return false; }
 }
@@ -1390,6 +1391,7 @@ async function _drainOutbox() {
     const res = await _sendOps(batch);
     if (res && !res.error) { _outboxDone(batch, 'ok'); continue; }
     if (_isTransient(res)) {
+      if (res && res.status === 401) { _needsSignIn = true; promptOnlineSync(); }
       console.warn('Sync paused:', res && res.error ? res.error.message : 'network error');
       _outboxStalled(); return 'stalled';
     }
@@ -1426,6 +1428,36 @@ async function _repairOrphanEvents() {
   console.log(`Repaired ${orphans.length} event(s) with a missing calendar`);
 }
 
+// Back online after an offline unlock: there's no auth token, so the queue can't
+// flush. Reuse the sign-in overlay to get one, rather than making the user reload.
+function promptOnlineSync() {
+  if (!_offlineMode && !_needsSignIn) return;
+  const ov = document.getElementById('auth-overlay');
+  if (!ov || !ov.classList.contains('hidden')) return;   // already showing
+  const sub = document.getElementById('auth-sub');
+  const em = document.getElementById('auth-email');
+  const pw = document.getElementById('auth-password');
+  const dismiss = document.getElementById('auth-dismiss-btn');
+  if (em && _supaUser && _supaUser.email && _supaUser.email.includes('@')) em.value = _supaUser.email;
+  if (sub) {
+    const n = _outbox.length;
+    sub.textContent = n ? `Sign in to sync ${n} change${n === 1 ? '' : 's'}` : 'Sign in to reconnect';
+  }
+  if (dismiss) dismiss.style.setProperty('display', 'block', 'important');
+  ov.classList.remove('hidden');
+  refreshAuthOfflineUI();
+  if (pw) { pw.value = ''; setTimeout(() => pw.focus(), 50); }
+}
+
+// "Not now" — keep working offline; changes stay queued on this device.
+function dismissOnlineSync() {
+  const ov = document.getElementById('auth-overlay');
+  const dismiss = document.getElementById('auth-dismiss-btn');
+  if (ov) ov.classList.add('hidden');
+  if (dismiss) dismiss.style.setProperty('display', 'none', 'important');
+  _updateSyncBadge();
+}
+
 function _updateSyncBadge() {
   if (!document.body) return;
   let el = document.getElementById('sync-badge');
@@ -1438,13 +1470,21 @@ function _updateSyncBadge() {
     document.body.appendChild(el);
   }
   const what = `${n} change${n === 1 ? '' : 's'}`;
-  el.textContent = _offlineMode || !navigator.onLine ? `Offline · ${what} waiting to sync`
+  const needsAuth = navigator.onLine && (_offlineMode || _needsSignIn);
+  el.textContent = needsAuth         ? `Sign in to sync ${what}`
+                 : !navigator.onLine ? `Offline · ${what} waiting to sync`
                  : _flushP           ? `Syncing ${what}…`
                  :                     `${what} waiting to sync`;
+  el.style.pointerEvents = needsAuth ? 'auto' : 'none';
+  el.style.cursor = needsAuth ? 'pointer' : 'default';
+  el.onclick = needsAuth ? promptOnlineSync : null;
 }
 window.addEventListener('online',  () => {
   _updateSyncBadge();
-  if (_offlineMode) { showToast('Back online — reload and sign in to sync your changes'); return; }
+  if (_offlineMode) {
+    if (_outbox.length) { showToast('Back online — sign in to sync your changes'); promptOnlineSync(); }
+    return;
+  }
   if (_outbox.length) _flushOutbox();
 });
 window.addEventListener('offline', _updateSyncBadge);
@@ -5568,6 +5608,7 @@ window.addEventListener('online', refreshAuthOfflineUI);
 // ── Listen for auth state changes ──
 _supa.auth.onAuthStateChange(async (event, session) => {
   if (event === 'SIGNED_IN' && session && session.user && !_confirmingEmail) {
+    _offlineMode = false; _needsSignIn = false;   // a real session ends offline mode
     _supaUser = session.user;
     // Wait for DOM to be ready before touching elements
     const run = async () => {
@@ -6161,6 +6202,8 @@ async function dbDeleteGroup(group) {
     if (appEl) { appEl.classList.remove('authenticated'); appEl.style.visibility = 'hidden'; appEl.style.opacity = '0'; }
     if (timerBlock) timerBlock.style.display = 'none';
     refreshAuthOfflineUI();
+    const _dismissBtn = document.getElementById('auth-dismiss-btn');
+    if (_dismissBtn) _dismissBtn.style.setProperty('display', 'none', 'important');
     if (message) {
       const errEl = document.getElementById('auth-err');
       if (errEl) {
@@ -6963,6 +7006,7 @@ async function importSelectedGcals() {
     </div>
     <button class="auth-btn" id="auth-submit-btn" onclick="authSubmit()">Sign In</button>
     <button class="auth-btn secondary" id="auth-offline-btn" style="display:none;margin-top:8px;" onclick="authOfflineUnlock()">Unlock offline</button>
+    <button class="auth-btn secondary" id="auth-dismiss-btn" style="display:none;margin-top:8px;" onclick="dismissOnlineSync()">Not now — keep working offline</button>
     <div class="auth-divider">or</div>
     <button class="auth-btn secondary" id="auth-forgot-btn" onclick="authForgot()">Forgot password?</button>
     <div class="auth-switch" id="auth-switch-text">Don't have an account? <span onclick="toggleAuthMode()">Sign up</span></div>
