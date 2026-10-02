@@ -4788,19 +4788,14 @@ async function deleteEvFromPopover() {
   if (!_editingEvRef) return;
   const recurId = _editingEvRef.recurId;
   if (recurId) {
-    if (confirm('Delete all events in this recurring series?')) {
-      for (let i = events.length - 1; i >= 0; i--) {
-        if (events[i].recurId === recurId) {
-          await dbDeleteEvent(events[i]);
-          events.splice(i, 1);
-        }
-      }
-    } else {
-      await dbDeleteEvent(_editingEvRef);
-      const idx = events.indexOf(_editingEvRef);
-      if (idx >= 0) events.splice(idx, 1);
-    }
-  } else {
+    // Recurring: ask which events to delete. Cancelling deletes nothing.
+    const ev = _editingEvRef;
+    _editingEvRef = null;
+    closeNewEvPopover();
+    showDeleteRecurrenceModal(ev);
+    return;
+  }
+  {
     await dbDeleteEvent(_editingEvRef);
     const idx = events.indexOf(_editingEvRef);
     if (idx >= 0) events.splice(idx, 1);
@@ -5356,14 +5351,19 @@ document.addEventListener('keydown', async e => {
 });
 
 // ── Recurrence delete-scope modal ──
+// Opened from the event popover (tap/click) and from the Delete key. The event
+// is remembered here so it survives the popover closing and selection clearing.
+let _delRecurEv = null;
 function showDeleteRecurrenceModal(ev) {
   const overlay = document.getElementById('delete-recur-overlay');
   if (!overlay) return;
+  _delRecurEv = ev || _selectedEvRef;
   overlay.classList.add('open');
 }
 
 async function deleteRecurrenceScope(scope) {
-  const ev = _selectedEvRef;
+  const ev = _delRecurEv || _selectedEvRef;
+  _delRecurEv = null;
   document.getElementById('delete-recur-overlay').classList.remove('open');
   if (!ev) return;
 
@@ -5396,6 +5396,7 @@ async function deleteRecurrenceScope(scope) {
 }
 
 function cancelDeleteRecurrence() {
+  _delRecurEv = null;   // cancel deletes nothing
   document.getElementById('delete-recur-overlay').classList.remove('open');
 }
 
@@ -6951,6 +6952,7 @@ async function importSelectedGcals() {
       <button onclick="deleteRecurrenceScope('this')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This event only</button>
       <button onclick="deleteRecurrenceScope('future')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;">This and following events</button>
       <button onclick="deleteRecurrenceScope('all')" style="text-align:left;padding:9px 12px;border-radius:8px;border:.5px solid var(--danger);background:none;color:var(--danger);cursor:pointer;font-size:13px;">All events in the series</button>
+      <button onclick="cancelDeleteRecurrence()" style="text-align:center;padding:9px 12px;border-radius:8px;border:.5px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-size:13px;margin-top:2px;">Cancel</button>
     </div>
   </div>
 </div>
