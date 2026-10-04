@@ -4217,6 +4217,7 @@ document.addEventListener('mouseup', async () => {
           globalEvRef.endTime   = newEndTime;
           if (dateChanged) globalEvRef.date = targetDs;
           await dbSaveEvent(globalEvRef);
+          resyncScheduledTimer(globalEvRef);
         }
       }
     }
@@ -4968,6 +4969,41 @@ async function _showScheduledTimerPending(task, slotStartMins, msUntilStart, tas
     }
     showToast(`⏱ Starting: ${task.title}`);
   }, msUntilStart);
+}
+
+// Dragging or resizing a scheduled block should move its pending auto-start too,
+// otherwise the timer still fires at the old time.
+function resyncScheduledTimer(ev) {
+  if (!ev || !ev._scheduled || !ev.startTime || !ev.endTime) return;
+  // Blocks are linked to their task by title (same as the rest of the scheduler)
+  const t = tasks.find(x => x.title === ev.title && !x.done);
+  if (!t) return;
+  if (!timerScheduledTimeout || String(timerTaskId) !== String(t.id)) return; // nothing waiting
+  clearTimeout(timerScheduledTimeout);
+  timerScheduledTimeout = null;
+
+  const startMins = _timeStrToMins(ev.startTime);
+  const mins = Math.max(1, _timeStrToMins(ev.endTime) - startMins);
+  const [Y, M, D] = ev.date.split('-').map(Number);
+  const startAt = new Date(Y, M - 1, D, Math.floor(startMins / 60), startMins % 60, 0, 0).getTime();
+  const msUntil = startAt - Date.now();
+
+  const h = Math.floor(startMins / 60), mm = String(startMins % 60).padStart(2, '0');
+  const label = `${h % 12 || 12}:${mm} ${h < 12 ? 'AM' : 'PM'}`;
+
+  if (msUntil > 0) {
+    _showScheduledTimerPending(t, startMins, msUntil, mins);
+    showToast(`⏱ Timer will now start at ${label}`);
+  } else {
+    // Moved into the past — make it startable now instead of never firing
+    const disp = document.getElementById('timer-display');
+    if (disp) { disp.style.fontSize = ''; disp.style.color = ''; }
+    const btn = document.getElementById('timer-play-btn');
+    if (btn) btn.disabled = false;
+    timerSecondsLeft = mins * 60;
+    updateTimerDisplay();
+    showToast('⏱ Block starts now — press play when ready');
+  }
 }
 
 async function unscheduleTask(taskId) {
