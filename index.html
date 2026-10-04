@@ -1810,6 +1810,28 @@ function openAddTask(){
   setTimeout(()=>document.getElementById('atd-title').focus(),50);
 }
 
+// Double-click (desktop) / double-tap (touch) a task → open its full editor.
+// Taps on the checkbox, action buttons or the time popover are left alone.
+const _TASK_HIT_SKIP = '.task-cb, .task-actions, .time-popover';
+let _lastTaskTap = { id: null, at: 0 };
+
+function taskDblClick(e, id) {
+  if (e.target.closest(_TASK_HIT_SKIP)) return;
+  openEditTask(id);
+}
+
+function taskTouchEnd(e, id) {
+  if (e.target.closest(_TASK_HIT_SKIP)) return;
+  const now = Date.now();
+  if (_lastTaskTap.id === id && now - _lastTaskTap.at < 400) {
+    e.preventDefault();          // also stops the double-tap zoom
+    _lastTaskTap = { id: null, at: 0 };
+    openEditTask(id);
+  } else {
+    _lastTaskTap = { id, at: now };
+  }
+}
+
 function openEditTask(id){
   const t=tasks.find(x=>x.id==id);if(!t)return;
   editingTaskId=id;
@@ -1935,7 +1957,9 @@ function renderTasks(){saveToStorage();
     const hasMeta=dueLabel||estLabel;
     return `<div class="task-item${t.done?' done':''}" draggable="true" data-task-id="${t.id}" data-priority="${t.priority||'none'}"
       ondragstart="onTaskDragStart(event,'${t.id}')"
-      ondragend="onTaskDragEnd(event)">
+      ondragend="onTaskDragEnd(event)"
+      ondblclick="taskDblClick(event,'${t.id}')"
+      ontouchend="taskTouchEnd(event,'${t.id}')">
       <div class="task-cb" onclick="toggleTask('${t.id}')"></div>
       <div class="task-content">
         <div class="task-title">${esc(t.title)}</div>
@@ -4092,6 +4116,16 @@ document.addEventListener('mousemove', e => {
   _processDragMove(e.clientY, e.clientX);
 });
 
+// Scheduled task blocks can only be pushed later, never earlier than where the
+// scheduler put them. Returns the earliest start (in minutes) allowed on the day
+// currently under the cursor, or 0 when there's no restriction.
+function _dragMinStart() {
+  const ev = _drag && _drag.ev;
+  if (!ev || !ev._scheduled) return 0;
+  if (_drag.targetDs > ev.date) return 0;              // a later day is always fine
+  return _timeStrToMins(ev.startTime || '00:00');      // same day: no earlier than original
+}
+
 function _processDragMove(clientY, clientX) {
   if (!_drag) return;
 
@@ -4102,6 +4136,8 @@ function _processDragMove(clientY, clientX) {
       const r = col.getBoundingClientRect();
       if (clientX >= r.left && clientX <= r.right) {
         const newDs = col.dataset.ds;
+        // scheduled blocks can't be dragged back to an earlier day
+        if (newDs && _drag.ev && _drag.ev._scheduled && newDs < _drag.ev.date) break;
         if (newDs && newDs !== _drag.targetDs) {
           _drag.targetDs = newDs;
           _drag.grid = col;
@@ -4129,10 +4165,11 @@ function _processDragMove(clientY, clientX) {
     if (clientY < wrapRect.top    + 40) wrap.scrollTop -= 6;
     return;
   }
+  const minStart    = _dragMinStart();
   const rawStart    = (relY / PX_PER_MIN) - clickOffsetMins;
-  const visualStart = Math.max(0, Math.min(rawStart, 24 * 60 - durMins));
+  const visualStart = Math.max(minStart, Math.min(rawStart, 24 * 60 - durMins));
   let snappedStart  = _snapMin(rawStart);
-  snappedStart      = Math.max(0, Math.min(snappedStart, 24 * 60 - durMins));
+  snappedStart      = Math.max(minStart, Math.min(snappedStart, 24 * 60 - durMins));
   const snappedEnd  = snappedStart + durMins;
   blockEl.style.top             = (visualStart * PX_PER_MIN) + 'px';
   timeLabel.style.top           = (visualStart * PX_PER_MIN + 3) + 'px';
@@ -4195,6 +4232,16 @@ document.addEventListener('mouseup', async () => {
 
     const dateChanged = targetDs !== globalEvRef.date;
     didChange = (newStartTime !== oldStartTime || newEndTime !== oldEndTime || dateChanged);
+
+    // Scheduled blocks never move backwards, however the drag ended up
+    if (didChange && globalEvRef._scheduled && !isResize) {
+      const movedEarlier = targetDs < globalEvRef.date ||
+        (targetDs === globalEvRef.date && _timeStrToMins(newStartTime) < _timeStrToMins(oldStartTime));
+      if (movedEarlier) {
+        didChange = false;
+        showToast('Scheduled blocks can only be moved later');
+      }
+    }
 
     if (didChange) {
       if (globalEvRef._pendingNew) {
