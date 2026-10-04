@@ -5234,6 +5234,121 @@ function timerCompleteAddTimeCustom() {
 }
 
 
+
+// ══════════════════════════════════════════════════════════════
+// MISSED SCHEDULED BLOCKS — review on open
+// ══════════════════════════════════════════════════════════════
+// Blocks whose time passed while the app was closed are asked about when you
+// next open it: finished, or put the time back on the task.
+const REVIEWED_KEY = 'daycal_reviewed_blocks';   // block ids only — not sensitive
+let _missedQueue = [], _missedCur = null;
+
+function _blockKey(e) { return String(e._dbId || (e.date + '|' + e.startTime + '|' + e.title)); }
+function _reviewedSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(REVIEWED_KEY) || '[]')); } catch(e) { return new Set(); }
+}
+function _markReviewed(e) {
+  const set = _reviewedSet();
+  set.add(_blockKey(e));
+  try { localStorage.setItem(REVIEWED_KEY, JSON.stringify([...set].slice(-400))); } catch(err) {}
+}
+function _blockEndMs(e) {
+  const [Y, M, D] = e.date.split('-').map(Number);
+  const em = _timeStrToMins(e.endTime);
+  return new Date(Y, M - 1, D, Math.floor(em / 60), em % 60, 0, 0).getTime();
+}
+function _taskForBlock(e) { return tasks.find(t => t.title === e.title && !t.done); }
+
+function reviewMissedBlocks() {
+  const now = Date.now(), cutoff = now - 7 * 24 * 3600 * 1000;  // ignore anything older than a week
+  const reviewed = _reviewedSet();
+  _missedQueue = events.filter(e => {
+    if (!e._scheduled || !e.date || !e.endTime) return false;
+    if (reviewed.has(_blockKey(e))) return false;
+    const end = _blockEndMs(e);
+    if (end > now || end < cutoff) return false;
+    if (timerRunning && timerTaskId != null) {           // currently being worked on
+      const running = tasks.find(t => t.id == timerTaskId);
+      if (running && running.title === e.title) return false;
+    }
+    return !!_taskForBlock(e);
+  }).sort((a, b) => _blockEndMs(a) - _blockEndMs(b));
+  _showNextMissed();
+}
+
+function _showNextMissed() {
+  const ov = document.getElementById('missed-overlay');
+  _missedCur = _missedQueue.shift() || null;
+  if (!_missedCur || !ov) { if (ov) ov.classList.remove('open'); _missedCur = null; return; }
+  const e = _missedCur;
+  const mins = Math.max(1, _timeStrToMins(e.endTime) - _timeStrToMins(e.startTime));
+  const when = formatDue ? formatDue(e.date, todayStr()) : e.date;
+  document.getElementById('mb-sub').textContent = `Did you finish "${e.title}"?`;
+  document.getElementById('mb-when').textContent = `${when} · ${_fmt12shortTime ? _fmt12shortTime(e.startTime) : e.startTime} · ${formatEst(mins)}`;
+  document.getElementById('mb-count').textContent = _missedQueue.length ? `${_missedQueue.length} more to review` : '';
+  document.getElementById('mb-full-btn').textContent = `Full time back (${formatEst(mins)})`;
+  document.getElementById('mb-mins').value = '';
+  missedBack();                                  // always open on the yes/no step
+  ov.classList.add('open');
+}
+
+function missedYes() {
+  const e = _missedCur;
+  if (e) {
+    const t = _taskForBlock(e);
+    _markReviewed(e);
+    if (t) toggleTask(t.id);
+  }
+  _showNextMissed();
+}
+
+function missedNo() {
+  document.getElementById('mb-yesno').style.display = 'none';
+  document.getElementById('mb-opts').classList.add('open');
+  document.getElementById('mb-sub').textContent = 'Put the time back on this task?';
+}
+
+function missedBack() {
+  document.getElementById('mb-yesno').style.display = 'flex';
+  document.getElementById('mb-opts').classList.remove('open');
+  if (_missedCur) document.getElementById('mb-sub').textContent = `Did you finish "${_missedCur.title}"?`;
+}
+
+async function missedGiveBack(mins) {
+  const e = _missedCur;
+  if (!e) return _showNextMissed();
+  const t = _taskForBlock(e);
+  const blockMins = Math.max(1, _timeStrToMins(e.endTime) - _timeStrToMins(e.startTime));
+  const give = mins == null ? blockMins : mins;
+  _markReviewed(e);
+  if (t) {
+    ensureTaskFields();
+    const current = t.timeLeftMins != null ? t.timeLeftMins : (t.estMins || 0);
+    const capped = t.estMins ? Math.min(t.estMins, current + give) : current + give;
+    t.timeLeftMins = capped;
+    t.scheduled = false;
+    t._partiallyScheduled = t.estMins ? capped < t.estMins : false;
+    await dbSaveTask(t);
+    renderTasks();
+    showToast(`${formatEst(give)} back on "${t.title}"`);
+  }
+  _showNextMissed();
+}
+
+function missedGiveBackCustom() {
+  const inp = document.getElementById('mb-mins');
+  const mins = parseInt(inp.value);
+  if (!mins || mins < 1) { inp.focus(); return; }
+  missedGiveBack(mins);
+}
+
+// Esc closes the review — remaining blocks are asked about next time
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !_missedCur) return;
+  _missedQueue = []; _missedCur = null;
+  document.getElementById('missed-overlay').classList.remove('open');
+});
+
 // ══════════════════════════════════════════════════════════════
 // DRAG THE EVENT POPOVER
 // ══════════════════════════════════════════════════════════════
@@ -5674,6 +5789,7 @@ async function bootOffline() {
   showUserBar();
   _updateSyncBadge();
   showToast('Offline — changes save on this device and sync when you sign in online');
+  setTimeout(reviewMissedBlocks, 600);
   if (typeof isMobile === 'function' && isMobile()) requestAnimationFrame(() => mobileNav('cal'));
 }
 
@@ -5724,6 +5840,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       const fresh = await loadFromSupabase();
       await _repairOrphanEvents();
       loadBanner.remove();
+      setTimeout(reviewMissedBlocks, 600);
       if (!fresh && hasCached) {
         showToast(_outbox.length ? 'Some changes haven\'t synced yet — showing this device\'s copy'
                                  : 'Couldn\'t reach the server — showing saved copy', true);
@@ -6996,6 +7113,31 @@ async function importSelectedGcals() {
   </div>
 </div>
 
+
+<!-- Missed scheduled block review -->
+<div class="timer-complete-overlay" id="missed-overlay">
+  <div class="timer-complete-dialog">
+    <div class="timer-complete-icon">⏰</div>
+    <div class="timer-complete-title">Scheduled block passed</div>
+    <div class="timer-complete-sub" id="mb-sub">Did you finish this task?</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:10px;" id="mb-when"></div>
+    <div class="timer-complete-btns" id="mb-yesno">
+      <button class="tcb-no" onclick="missedNo()">No</button>
+      <button class="tcb-yes" onclick="missedYes()">Yes, done! ✓</button>
+    </div>
+    <div class="timer-addtime-wrap" id="mb-opts">
+      <div class="timer-addtime-row">
+        <button id="mb-full-btn" onclick="missedGiveBack(null)">Full time back</button>
+      </div>
+      <div class="timer-addtime-custom">
+        <input type="number" id="mb-mins" min="1" max="999" placeholder="min" onkeydown="if(event.key==='Enter')missedGiveBackCustom()"/>
+        <button onclick="missedGiveBackCustom()">Add this much</button>
+      </div>
+      <button onclick="missedBack()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;padding:4px;">← Back</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;" id="mb-count"></div>
+  </div>
+</div>
 
 <!-- Timer complete modal -->
 <div class="timer-complete-overlay" id="timer-complete-overlay">
