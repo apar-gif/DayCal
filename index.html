@@ -2583,8 +2583,8 @@ function startTimer(){
 
 // Re-sync the moment the tab becomes visible again, so the display is correct
 // immediately rather than at the next (possibly throttled) tick.
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden)_timerSync(); });
-window.addEventListener('focus',()=>_timerSync());
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ _timerSync(); syncTimerToCurrentBlock(); } });
+window.addEventListener('focus',()=>{ _timerSync(); syncTimerToCurrentBlock(); });
 
 let _inStopTimer=false;
 function stopTimer(){
@@ -4886,6 +4886,8 @@ setInterval(() => {
     render();
     scheduleEventNotifications();
   }
+  // Catch a block that started while the app sat open with no pending auto-start
+  syncTimerToCurrentBlock();
   // Also nudge the now-line position without a full re-render
   const nowLine = document.querySelector('.day-now-line');
   if (nowLine) {
@@ -5016,6 +5018,59 @@ async function _showScheduledTimerPending(task, slotStartMins, msUntilStart, tas
     }
     showToast(`⏱ Starting: ${task.title}`);
   }, msUntilStart);
+}
+
+
+// If the current time falls inside a scheduled block, the timer should already be
+// running against it — e.g. the app was closed when the block began, or it was
+// dragged over the current time. Picks up the block mid-way with the time left.
+function syncTimerToCurrentBlock() {
+  const nowMs = Date.now();
+  const block = events.find(e => {
+    if (!e._scheduled || !e.date || !e.startTime || !e.endTime) return false;
+    const [Y, M, D] = e.date.split('-').map(Number);
+    const sm = _timeStrToMins(e.startTime), em = _timeStrToMins(e.endTime);
+    const start = new Date(Y, M - 1, D, Math.floor(sm / 60), sm % 60, 0, 0).getTime();
+    const end   = new Date(Y, M - 1, D, Math.floor(em / 60), em % 60, 0, 0).getTime();
+    return nowMs >= start && nowMs < end && !!tasks.find(t => t.title === e.title && !t.done);
+  });
+  if (!block) return;
+  const t = tasks.find(x => x.title === block.title && !x.done);
+  if (!t) return;
+
+  const [Y, M, D] = block.date.split('-').map(Number);
+  const em = _timeStrToMins(block.endTime);
+  const endMs = new Date(Y, M - 1, D, Math.floor(em / 60), em % 60, 0, 0).getTime();
+  const secsLeft = Math.round((endMs - nowMs) / 1000);
+  if (secsLeft < 10) return;                // nearly over — don't bother
+
+  if (timerRunning) {
+    // Already counting. If it's this block's task, pull it back in line with the
+    // block (the app may have been asleep); if it's something else, leave it be.
+    if (String(timerTaskId) !== String(t.id)) return;
+    if (Math.abs(timerSecondsLeft - secsLeft) > 60) {
+      timerSecondsLeft = secsLeft;
+      timerEndsAt = nowMs + secsLeft * 1000;
+      updateTimerDisplay();
+    }
+    return;
+  }
+
+  // A pending auto-start for this same task is now redundant
+  if (timerScheduledTimeout) { clearTimeout(timerScheduledTimeout); timerScheduledTimeout = null; }
+
+  timerTaskId = t.id;
+  const disp = document.getElementById('timer-display');
+  if (disp) { disp.style.fontSize = ''; disp.style.color = ''; }
+  const btn = document.getElementById('timer-play-btn');
+  if (btn) btn.disabled = false;
+  populateTimerSelect();
+  const sel = document.getElementById('timer-task-select');
+  if (sel) sel.value = String(t.id);
+  timerSecondsLeft = secsLeft;
+  updateTimerDisplay();
+  startTimer();
+  showToast(`⏱ ${formatEst(Math.round(secsLeft / 60))} left in this block — timer running`);
 }
 
 // Dragging or resizing a scheduled block should move its pending auto-start too,
@@ -5789,7 +5844,7 @@ async function bootOffline() {
   showUserBar();
   _updateSyncBadge();
   showToast('Offline — changes save on this device and sync when you sign in online');
-  setTimeout(reviewMissedBlocks, 600);
+  setTimeout(() => { reviewMissedBlocks(); syncTimerToCurrentBlock(); }, 600);
   if (typeof isMobile === 'function' && isMobile()) requestAnimationFrame(() => mobileNav('cal'));
 }
 
@@ -5840,7 +5895,7 @@ _supa.auth.onAuthStateChange(async (event, session) => {
       const fresh = await loadFromSupabase();
       await _repairOrphanEvents();
       loadBanner.remove();
-      setTimeout(reviewMissedBlocks, 600);
+      setTimeout(() => { reviewMissedBlocks(); syncTimerToCurrentBlock(); }, 600);
       if (!fresh && hasCached) {
         showToast(_outbox.length ? 'Some changes haven\'t synced yet — showing this device\'s copy'
                                  : 'Couldn\'t reach the server — showing saved copy', true);

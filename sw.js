@@ -1,7 +1,7 @@
 // DayCal service worker — lets the app load with no connection.
 //
 // ⚠️ BUMP CACHE_VERSION ON EVERY DEPLOY, or devices keep running the old code.
-const CACHE_VERSION = 'daycal-v7';
+const CACHE_VERSION = 'daycal-v8';
 
 // Files from this site to cache up front.
 const APP_SHELL = [
